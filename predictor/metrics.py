@@ -28,7 +28,10 @@ def calculate_metrics(predictions, expected):
                     false_negative += 1
 
     accuracy = float(true_positive + true_negative) / total
-    precision = true_positive / float(true_positive + false_positive)
+    if true_positive + false_positive == 0:
+        precision = 0
+    else:
+        precision = true_positive / float(true_positive + false_positive)
     recall = true_positive / float(true_positive + false_negative)
 
     return accuracy, precision, recall

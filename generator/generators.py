@@ -37,9 +37,9 @@ def generate_clients(cnt):
     ids = [i for i in range(0, cnt)]
     merged = np.c_[ids, pc, X, y]
     names = np.array(["client_" + str(i) for i in range(0, cnt)])
-    clients = pd.DataFrame(names, columns=["name"])
+    clients = pd.DataFrame(names, columns=["client_name"])
 
-    col_names = ["clientId", "pc"] + ["feature_" + str(i) for i in range(0, features)] + ["class"]
+    col_names = ["clientId", "pc"] + ["client_feature_" + str(i) for i in range(0, features)] + ["class"]
     clients_data = pd.DataFrame(merged, columns=col_names)
 
     clients = clients.join(clients_data)
@@ -61,9 +61,9 @@ def generate_products(cnt):
     ids = [i for i in range(0, cnt)]
     merged = np.c_[ids, pp, X, y]
     names = np.array(["prod_" + str(i) for i in range(0, cnt)])
-    products = pd.DataFrame(names, columns=["name"])
+    products = pd.DataFrame(names, columns=["product_name"])
 
-    col_names = ["productId", "pp"] + ["feature_" + str(i) for i in range(0, features)] + ["class"]
+    col_names = ["productId", "pp"] + ["product_feature_" + str(i) for i in range(0, features)] + ["class"]
     products_data = pd.DataFrame(merged, columns=col_names)
 
     products = products.join(products_data)
@@ -113,7 +113,7 @@ def generate_matrix(clients, products, t):  # t --> timestamp
     clients_count = clients.shape[0]
     products_count = products.shape[0]
     matrix = np.ndarray(shape=(clients_count, products_count))
-    # print "Matrix size: ", matrix.shape
+    print "Matrix size: ", matrix.shape
     # print "-----"
 
     for c in range(0, clients_count):
@@ -125,8 +125,11 @@ def generate_matrix(clients, products, t):  # t --> timestamp
 def generate_orders(clients, products, days):
     # days : list of timestamp of the orders matrices that must be generated
     # returns the matrices of with the orders
-
+    print "Generating orders:"
+    print "#Clients:", clients.shape
+    print "#Products:", products.shape
     matrices = {}
     for day in days:
+        print "Generating orders for day: ", datetime.date.fromtimestamp(day).strftime('%Y-%m-%d %H:%M:%S')
         matrices[day] = generate_matrix(clients, products, day)
     return matrices
