@@ -67,6 +67,9 @@ print predictions_base
 print "\n\n\n"
 expected_vec = np.reshape(expected, expected.size)
 predicted_tree_vec = clf.predict_proba(queries_prop)
+
+print predicted_tree_vec
+
 predicted_base_vec = np.reshape(base_predictor.weights, base_predictor.weights.size)
 
 #print expected_vec.shape, predicted_base_vec.shape
