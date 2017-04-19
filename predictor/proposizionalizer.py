@@ -35,4 +35,9 @@ def proposizionalize(orders, clients, products):
     orders_df = orders_df.drop('client_name', axis=1)
     orders_df = orders_df.drop('product_name', axis=1)
 
+    orders_df = orders_df.drop('pc', axis=1)
+    orders_df = orders_df.drop('client_freq_scale', axis=1)
+    orders_df = orders_df.drop('pp', axis=1)
+    orders_df = orders_df.drop('product_freq_scale', axis=1)
+
     return orders_df

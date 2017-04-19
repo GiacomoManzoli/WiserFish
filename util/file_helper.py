@@ -1,13 +1,19 @@
 import pandas as pd
 import numpy as np
+import pickle
 
 
-def save_all(clients, products, orders):
+def save_all(clients, products, orders, model, prefix=''):
     # type: (pd.DataFrame, pd.DataFrame, dict) -> None
     """Saves the pandas DataFrame and the orders dict as csv files inside the 'data' directory"""
-    clients.to_csv('./data/clients.csv', index=False)
-    products.to_csv('./data/products.csv', index=False)
 
+    if prefix != '' and prefix[-1] != '_':
+        prefix += '_'
+
+    clients.to_csv('./data/%sclients.csv' % prefix, index=False)
+    products.to_csv('./data/%sproducts.csv' % prefix, index=False)
+    with open('./data/%spmodel.pkl' % prefix, 'wb') as output:
+        pickle.dump(model, output, pickle.HIGHEST_PROTOCOL)
     # orders -> dictionary, keys:Datetime, values:np.ndarray
     # saves only the orders (the ones of the matrix)
 
@@ -25,14 +31,20 @@ def save_all(clients, products, orders):
                         'productId': products.iloc[p]['productId']
                     })
     orders_df = pd.DataFrame(orders_rows, columns=['datetime', 'clientId', 'productId'])
-    orders_df.to_csv('./data/orders.csv', index=False)
+    orders_df.to_csv('./data/%sorders.csv' % prefix, index=False)
 
 
-def load_all():
+def load_all(prefix=''):
     """Loads the clients and products DataFrames and the orderd dictionary from the 'data' directory"""
-    clients = pd.read_csv('./data/clients.csv')
-    products = pd.read_csv('./data/products.csv')
-    orders = pd.read_csv('./data/orders.csv')
+
+    if prefix != '' and prefix[-1] != '_':
+        prefix += '_'
+
+    clients = pd.read_csv('./data/%sclients.csv' % prefix)
+    products = pd.read_csv('./data/%sproducts.csv' % prefix)
+    orders = pd.read_csv('./data/%sorders.csv' % prefix)
+    with open('./data/%spmodel.pkl', 'rb') as input:
+        model = pickle.load(input)
 
     clients_count = clients.shape[0]  # shape[0] == row count
     products_count = products.shape[0]
@@ -45,4 +57,4 @@ def load_all():
 
         orders_dict[key][int(row['clientId']), int(row['productId'])] = 1
 
-    return clients, products, orders_dict
+    return clients, products, orders_dict, model

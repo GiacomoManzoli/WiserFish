@@ -1,30 +1,28 @@
-import time
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
+import time
 import numpy as np
 from sklearn import tree, svm
+from sklearn.metrics import roc_auc_score
 import pydotplus
 
-from predictor import baseline_predictor
-from predictor import calculate_metrics
+from predictor.baseline import BaselinePredictor
+from predictor.metrics import calculate_metrics
 from predictor.proposizionalizer import proposizionalize
-from generator.generators import generate_orders, generate_clients, generate_products
+from generator.generators import generate_dataset, generate_orders
 
 SECS_IN_DAY = 60*60*24
 
-print "Generating clients..."
-clients = generate_clients(5)
-# print clients
 
-print "Generating products..."
-products = generate_products(10)
-
-cnt_days = 10
-days = [time.time() - SECS_IN_DAY * i for i in range(1, cnt_days+1)]  # from yesterday to cnt_days back
-
-orders = generate_orders(clients, products, days)
+clients, products, orders, model = generate_dataset(clients_count=10,
+                                                    products_count=10,
+                                                    days_count=20,
+                                                    day_interval=4,
+                                                    model_name='cond')
 
 
-# Train data
+# Train data (the first matrix are the order for today)
 dataset = proposizionalize(orders, clients, products)
 X = dataset.drop('ordered', axis=1).as_matrix()
 y = dataset['ordered'].as_matrix()
@@ -49,27 +47,45 @@ clf = clf.fit(X, y)
 # graph.write_pdf("tree_plot.pdf")
 
 print "Today orders"
-expected = generate_orders(clients, products, [today])[today]
+expected = generate_orders(clients, products, [today], model)[today]
 print "--- Expected Result ---"
 print expected
 
-predictions = clf.predict(queries_prop)
-predictions = predictions.reshape(expected.shape)
+predictions_tree = clf.predict(queries_prop)
+predictions_tree = predictions_tree.reshape(expected.shape)
 print "--- Predicted (Tree) ---"
-print predictions
+print predictions_tree
 
 print "--- Predicted (Base) ---"
-predicted = baseline_predictor(orders, 0.0004)
-print predicted
+base_predictor = BaselinePredictor()
+base_predictor.fit(orders)
+predictions_base = base_predictor.predict_with_topn()
+print predictions_base
 
-accuracy_tree, precision_tree, recall_tree = calculate_metrics(predictions, expected)
-print "-- Tree metrics --"
-print "Accuracy:", accuracy_tree
-print "Precision:", precision_tree
-print "Recall:", recall_tree
 
-accuracy_base, precision_base, recall_base = calculate_metrics(predicted, expected)
-print "-- Base metrics --"
-print "Accuracy:", accuracy_base
-print "Precision:", precision_base
-print "Recall:", recall_base
+######## METRICS
+print "\n\n\n"
+expected_vec = np.reshape(expected, expected.size)
+predicted_tree_vec = clf.predict_proba(queries_prop)
+predicted_base_vec = np.reshape(base_predictor.weights, base_predictor.weights.size)
+
+#print expected_vec.shape, predicted_base_vec.shape
+
+accuracy_tree, precision_tree, recall_tree = calculate_metrics(predictions_tree, expected)
+# roc_auc_tree = roc_auc_score(y_true=expected_vec, y_score=predicted_tree_vec)
+roc_auc_tree = -1
+
+accuracy_base, precision_base, recall_base = calculate_metrics(predictions_base, expected)
+roc_auc_base = roc_auc_score(y_true=expected_vec, y_score=predicted_base_vec)
+
+print u"┌────────────┬──────────┬──────────┐"
+print u"│  Metrics   │   Base   │   Tree   │"
+print u"├────────────┼──────────┼──────────┤"
+print u"│ Accuracy   │ ", unicode(u'%.4f  │  %.4f  │' % (accuracy_base, accuracy_tree))
+print u"│ Precision  │ ", unicode(u'%.4f  │  %.4f  │' % (precision_base, precision_tree))
+print u"│ Recall     │ ", unicode(u'%.4f  │  %.4f  │' % (recall_base, recall_tree))
+print u"│ ROC_AUC    │ ", unicode(u'%.4f  │    --    │' % (roc_auc_base))
+print u"└────────────┴──────────┴──────────┘"
+
+
+
