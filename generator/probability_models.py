@@ -32,7 +32,9 @@ class ProbabilityModel(object):
 class RandomProbabilityModel(ProbabilityModel):
     def probability(self, client, product, timestamp):
         # type: (ProbabilityModel, pd.Series, pd.Series, int) -> int
-        return random.uniform(0, 1)
+        p = random.uniform(0, 1)
+        choices = [(1, p), (0, 1 - p)]
+        return weighted_choice(choices)
 
 
 class SimpleProbabilityModel(ProbabilityModel):
