@@ -15,8 +15,8 @@ def output_dir(prefix):
     return experiment_path
 
 
-def save_all(clients, products, orders, model,name='', prefix=''):
-    # type: (pd.DataFrame, pd.DataFrame, dict) -> None
+def save_all(clients, products, orders, model, name='', prefix=''):
+    # type: (pd.DataFrame, pd.DataFrame, dict, str, str) -> None
     """Saves the pandas DataFrame and the orders dict as csv files inside the 'data' directory"""
 
     if name == '':
@@ -26,7 +26,7 @@ def save_all(clients, products, orders, model,name='', prefix=''):
     if prefix != '' and prefix[-1] != '_':
         prefix += '_'
 
-    print base_path, prefix
+    print "Saving into:", base_path, prefix
     clients.to_csv('%s%sclients.csv' % (base_path, prefix), index=False)
     products.to_csv('%s%sproducts.csv' % (base_path, prefix), index=False)
     with open('%s%spmodel.pkl' % (base_path, prefix), 'wb') as output:
@@ -47,32 +47,62 @@ def save_all(clients, products, orders, model,name='', prefix=''):
                         'clientId': clients.iloc[c]['clientId'],
                         'productId': products.iloc[p]['productId']
                     })
-    orders_df = pd.DataFrame(orders_rows, columns=['datetime', 'clientId', 'productId'])
-    orders_df.to_csv('%s%sorders.csv' % (base_path, prefix), index=False)
+    if len(orders_rows) != 0:
+        orders_df = pd.DataFrame(orders_rows, columns=['datetime', 'clientId', 'productId'])
+        orders_df.to_csv('%s%sorders.csv' % (base_path, prefix), index=False)
 
 
-def load_all(prefix=''):
+def save_partial_orders(name, prefixes, result_prefix):
+    assert len(prefixes) >= 1
+    base_path = output_dir(name)
+
+    print "Saving orders into:", base_path
+
+    orders = None
+    # Creates a single DF from all the partial files
+    for prefix in prefixes:
+        if prefix != '' and prefix[-1] != '_':
+            prefix += '_'
+        partial_df = pd.read_csv('%s%sorders.csv' % (base_path, prefix))
+        if orders is None:
+            orders = partial_df
+        else:
+            orders = pd.concat([orders, partial_df])
+
+    orders.to_csv('%s%sorders.csv' % (base_path, result_prefix), index=False)
+
+
+def load_all(name='', prefix=''):
     """Loads the clients and products DataFrames and the orderd dictionary from the 'data' directory"""
+
+    if name == '':
+        name = prefix
+    base_path = output_dir(name)
 
     if prefix != '' and prefix[-1] != '_':
         prefix += '_'
 
-    base_path = output_dir(prefix)
+    print "Loading from:", base_path, prefix
     clients = pd.read_csv('%s%sclients.csv' % (base_path, prefix))
     products = pd.read_csv('%s%sproducts.csv' % (base_path, prefix))
-    orders = pd.read_csv('%s%sorders.csv' % (base_path, prefix))
-    with open('%s%spmodel.pkl', 'rb') as input_file:
+    with open('%s%spmodel.pkl' % (base_path, prefix), 'rb') as input_file:
         model = pickle.load(input_file)
 
-    clients_count = clients.shape[0]  # shape[0] == row count
-    products_count = products.shape[0]
+    try:
+        orders = pd.read_csv('%s%sorders.csv' % (base_path, prefix))
 
-    orders_dict = {}
-    for idx, row in orders.iterrows():
-        key = int(row['datetime'])  # timestamp dell'ordine
-        if key not in orders_dict.keys():
-            orders_dict[key] = np.zeros(shape=(clients_count, products_count))
+        clients_count = clients.shape[0]  # shape[0] == row count
+        products_count = products.shape[0]
 
-        orders_dict[key][int(row['clientId']), int(row['productId'])] = 1
+        orders_dict = {}
+        for idx, row in orders.iterrows():
+            key = int(row['datetime'])  # timestamp dell'ordine
+            if key not in orders_dict.keys():
+                orders_dict[key] = np.zeros(shape=(clients_count, products_count))
+
+            orders_dict[key][int(row['clientId']), int(row['productId'])] = 1
+    except IOError:
+        print "Couldn't load the orders"
+        orders_dict = {}
 
     return clients, products, orders_dict, model

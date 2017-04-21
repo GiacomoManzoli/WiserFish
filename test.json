@@ -1,0 +1,9 @@
+{
+  "prefix": "test",
+  "clients_count": 100,
+  "products_count": 100,
+  "days_count": 5,
+  "day_interval": 0,
+  "model_name": "rand",
+  "part_size": 25
+}

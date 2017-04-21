@@ -137,6 +137,12 @@ def generate_matrix(clients, products, t, model):  # t --> timestamp
 
     for c in range(0, clients_count):
         for p in range(0, products_count):
+            # model.probabi
+            # client_copy = clients.ix[c].copy()
+            # client_copy['clientId'] = c
+            # product_copy = products.ix[p].copy()
+            # product_copy['productId'] = p
+            # matrix[c, p] = model.probability(client_copy, product_copy, t)
             matrix[c, p] = model.probability(clients.ix[c], products.ix[p], t)
     return matrix
 
@@ -151,7 +157,7 @@ def generate_orders(clients, products, days, model):
     print ""
     generated = 0
     for day in days:
-        print "Generating orders for day: ", datetime.date.fromtimestamp(day).strftime('%Y-%m-%d %H:%M:%S'), '[%d / %d]'%(generated+1, len(days))
+        print "Generating orders for day: ", datetime.date.fromtimestamp(day).strftime('%Y-%m-%d %H:%M:%S'), '[%d / %d]' % (generated+1, len(days))
         matrices[day] = generate_matrix(clients, products, day, model)
         generated += 1
     return matrices
@@ -160,6 +166,10 @@ def generate_orders(clients, products, days, model):
 ###########################
 # DATASET
 ###########################
+
+def generate_days(days_count, day_interval=0):
+    return [time.time() - SECS_IN_DAY * i * (day_interval + 1) for i in range(1, days_count+1)]  # starts from today
+
 
 def generate_dataset(clients_count, products_count, days_count, day_interval=0, model_name='random'):
     """
@@ -176,7 +186,7 @@ def generate_dataset(clients_count, products_count, days_count, day_interval=0, 
     print "Generating products..."
     products = generate_products(products_count)
 
-    days = [time.time() - SECS_IN_DAY * i * (day_interval + 1) for i in range(1, days_count+1)]  # starts from today
+    days = generate_days(days_count, day_interval)
 
     print "Generating orders..."
     model = RandomProbabilityModel()
@@ -185,7 +195,10 @@ def generate_dataset(clients_count, products_count, days_count, day_interval=0, 
     elif model_name == 'cond':
         model = CondProbabilityModel(clients, products)
 
-    orders = generate_orders(clients, products, days, model)
+    if days_count != 0:
+        orders = generate_orders(clients, products, days, model)
+    else:
+        orders = {}
 
     return clients, products, orders, model
 
