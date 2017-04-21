@@ -1,0 +1,10 @@
+{
+  "prefix": "small_cond_continuos",
+  "clients_count": 10,
+  "products_count": 100,
+  "days_count": 10,
+  "day_interval": 0,
+  "model_name": "cond"
+}
+
+

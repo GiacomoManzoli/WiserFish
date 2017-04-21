@@ -4,6 +4,7 @@
 import time
 import numpy as np
 from sklearn import tree, svm
+from sklearn.naive_bayes import BernoulliNB
 from sklearn.metrics import roc_auc_score
 import pydotplus
 
@@ -15,10 +16,10 @@ from generator.generators import generate_dataset, generate_orders
 SECS_IN_DAY = 60*60*24
 
 
-clients, products, orders, model = generate_dataset(clients_count=10,
-                                                    products_count=10,
-                                                    days_count=20,
-                                                    day_interval=4,
+clients, products, orders, model = generate_dataset(clients_count=5,
+                                                    products_count=5,
+                                                    days_count=5,
+                                                    day_interval=0,
                                                     model_name='cond')
 
 
@@ -36,25 +37,56 @@ queries[today] = np.zeros(shape=sample.shape)  # empty matrix to reuse the propo
 queries_prop = proposizionalize(queries, clients, products)
 queries_prop = queries_prop.drop('ordered', axis=1)  # drops the target column
 
-
+############################
 # Predictions
-clf = tree.DecisionTreeClassifier()
-#clf = svm.SVC(kernel='rbf')
-clf = clf.fit(X, y)
-# print tree
-# dot_data = tree.export_graphviz(clf, out_file=None)
-# graph = pydotplus.graph_from_dot_data(dot_data)
-# graph.write_pdf("tree_plot.pdf")
+############################
 
 print "Today orders"
 expected = generate_orders(clients, products, [today], model)[today]
+expected_vec = np.reshape(expected, expected.size)
 print "--- Expected Result ---"
 print expected
+
+# Tree
+
+clf = tree.DecisionTreeClassifier()
+clf = clf.fit(X, y)
 
 predictions_tree = clf.predict(queries_prop)
 predictions_tree = predictions_tree.reshape(expected.shape)
 print "--- Predicted (Tree) ---"
 print predictions_tree
+
+# BernoulliNB
+
+clf_bern = BernoulliNB()
+clf_bern.fit(X, y)
+predictions_bern = clf_bern.predict(queries_prop)
+predictions_bern = predictions_bern.reshape(expected.shape)
+print "--- Predicted (Bern) ---"
+print predictions_bern
+
+predicted_bern_vec = clf_bern.predict_proba(queries_prop)
+predicted_bern_vec = predicted_bern_vec[:, 1]  # probabilities for class "1"
+accuracy_bern, precision_bern, recall_bern = calculate_metrics(predictions_bern, expected)
+roc_auc_bern = roc_auc_score(y_true=expected_vec, y_score=predicted_bern_vec)
+
+# LinearSVM
+
+clf_lsvm = svm.SVC(kernel='rbf') # linear doesn't work (endless train), poly gives a "nan" decision_function
+clf_lsvm.fit(X, y)
+predictions_lsvm = clf_lsvm.predict(queries_prop)
+predictions_lsvm = predictions_lsvm.reshape(expected.shape)
+print "--- Predicted (LSVM) ---"
+print predictions_lsvm
+
+predicted_lsvm_vec = clf_lsvm.decision_function(queries_prop)
+print predicted_lsvm_vec
+#predicted_lsvm_vec = predicted_lsvm_vec[:, 1]  # probabilities for class "1"
+accuracy_lsvm, precision_lsvm, recall_lsvm = calculate_metrics(predictions_lsvm, expected)
+roc_auc_lsvm = roc_auc_score(y_true=expected_vec, y_score=predicted_bern_vec)
+
+# Baseline (TOPN)
 
 print "--- Predicted (Base) ---"
 base_predictor = BaselinePredictor()
@@ -65,10 +97,10 @@ print predictions_base
 
 ######## METRICS
 print "\n\n\n"
-expected_vec = np.reshape(expected, expected.size)
+
 predicted_tree_vec = clf.predict_proba(queries_prop)
 
-print predicted_tree_vec
+#print predicted_tree_vec
 
 predicted_base_vec = np.reshape(base_predictor.weights, base_predictor.weights.size)
 
@@ -81,14 +113,14 @@ roc_auc_tree = -1
 accuracy_base, precision_base, recall_base = calculate_metrics(predictions_base, expected)
 roc_auc_base = roc_auc_score(y_true=expected_vec, y_score=predicted_base_vec)
 
-print u"┌────────────┬──────────┬──────────┐"
-print u"│  Metrics   │   Base   │   Tree   │"
-print u"├────────────┼──────────┼──────────┤"
-print u"│ Accuracy   │ ", unicode(u'%.4f  │  %.4f  │' % (accuracy_base, accuracy_tree))
-print u"│ Precision  │ ", unicode(u'%.4f  │  %.4f  │' % (precision_base, precision_tree))
-print u"│ Recall     │ ", unicode(u'%.4f  │  %.4f  │' % (recall_base, recall_tree))
-print u"│ ROC_AUC    │ ", unicode(u'%.4f  │    --    │' % (roc_auc_base))
-print u"└────────────┴──────────┴──────────┘"
+print u"┌────────────┬──────────┬──────────┬──────────┐"
+print u"│  Metrics   │   Base   │   Tree   │   Bern   │"
+print u"├────────────┼──────────┼──────────┼──────────┤"
+print u"│ Accuracy   │ ", unicode(u'%.4f  │  %.4f  │  %.4f  │' % (accuracy_base, accuracy_tree, accuracy_bern))
+print u"│ Precision  │ ", unicode(u'%.4f  │  %.4f  │  %.4f  │' % (precision_base, precision_tree, precision_bern))
+print u"│ Recall     │ ", unicode(u'%.4f  │  %.4f  │  %.4f  │' % (recall_base, recall_tree, recall_bern))
+print u"│ ROC_AUC    │ ", unicode(u'%.4f  │    --    │  %.4f  │' % (roc_auc_base, roc_auc_bern))
+print u"└────────────┴──────────┴──────────┴──────────┘"
 
 
 

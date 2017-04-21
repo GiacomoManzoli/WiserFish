@@ -1,0 +1,10 @@
+{
+  "prefix": "big_rand_int",
+  "clients_count": 1000,
+  "products_count": 1000,
+  "days_count": 365,
+  "day_interval": 4,
+  "model_name": "rand"
+}
+
+

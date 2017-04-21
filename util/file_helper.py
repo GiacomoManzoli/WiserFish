@@ -1,18 +1,35 @@
 import pandas as pd
 import numpy as np
 import pickle
+import os
 
 
-def save_all(clients, products, orders, model, prefix=''):
+# Nomi delle directory
+D_OUTPUTS = "./data"
+
+
+def output_dir(prefix):
+    experiment_path = "%s/%s/" % (D_OUTPUTS, prefix)
+    if not os.path.exists(experiment_path):
+        os.makedirs(experiment_path)
+    return experiment_path
+
+
+def save_all(clients, products, orders, model,name='', prefix=''):
     # type: (pd.DataFrame, pd.DataFrame, dict) -> None
     """Saves the pandas DataFrame and the orders dict as csv files inside the 'data' directory"""
+
+    if name == '':
+        name = prefix
+    base_path = output_dir(name)
 
     if prefix != '' and prefix[-1] != '_':
         prefix += '_'
 
-    clients.to_csv('./data/%sclients.csv' % prefix, index=False)
-    products.to_csv('./data/%sproducts.csv' % prefix, index=False)
-    with open('./data/%spmodel.pkl' % prefix, 'wb') as output:
+    print base_path, prefix
+    clients.to_csv('%s%sclients.csv' % (base_path, prefix), index=False)
+    products.to_csv('%s%sproducts.csv' % (base_path, prefix), index=False)
+    with open('%s%spmodel.pkl' % (base_path, prefix), 'wb') as output:
         pickle.dump(model, output, pickle.HIGHEST_PROTOCOL)
     # orders -> dictionary, keys:Datetime, values:np.ndarray
     # saves only the orders (the ones of the matrix)
@@ -31,7 +48,7 @@ def save_all(clients, products, orders, model, prefix=''):
                         'productId': products.iloc[p]['productId']
                     })
     orders_df = pd.DataFrame(orders_rows, columns=['datetime', 'clientId', 'productId'])
-    orders_df.to_csv('./data/%sorders.csv' % prefix, index=False)
+    orders_df.to_csv('%s%sorders.csv' % (base_path, prefix), index=False)
 
 
 def load_all(prefix=''):
@@ -40,11 +57,12 @@ def load_all(prefix=''):
     if prefix != '' and prefix[-1] != '_':
         prefix += '_'
 
-    clients = pd.read_csv('./data/%sclients.csv' % prefix)
-    products = pd.read_csv('./data/%sproducts.csv' % prefix)
-    orders = pd.read_csv('./data/%sorders.csv' % prefix)
-    with open('./data/%spmodel.pkl', 'rb') as input:
-        model = pickle.load(input)
+    base_path = output_dir(prefix)
+    clients = pd.read_csv('%s%sclients.csv' % (base_path, prefix))
+    products = pd.read_csv('%s%sproducts.csv' % (base_path, prefix))
+    orders = pd.read_csv('%s%sorders.csv' % (base_path, prefix))
+    with open('%s%spmodel.pkl', 'rb') as input_file:
+        model = pickle.load(input_file)
 
     clients_count = clients.shape[0]  # shape[0] == row count
     products_count = products.shape[0]

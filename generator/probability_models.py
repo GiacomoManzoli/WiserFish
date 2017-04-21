@@ -67,7 +67,6 @@ class CondProbabilityModel(ProbabilityModel):
         products_count = products.shape[0]
         self.__p_cp = np.random.rand(clients_count, products_count)
 
-
     def probability(self, client, product, timestamp):
         # type: (ProbabilityModel, pd.Series, pd.Series, int) -> int
         # client : array representing the client

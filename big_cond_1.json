@@ -1,0 +1,10 @@
+{
+  "prefix": "big_cond_continuos",
+  "clients_count": 100,
+  "products_count": 1000,
+  "days_count": 365,
+  "day_interval": 0,
+  "model_name": "cond"
+}
+
+
