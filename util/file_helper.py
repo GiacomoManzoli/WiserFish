@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import numpy as np
 import pickle
@@ -6,7 +8,6 @@ import os
 
 # Nomi delle directory
 D_OUTPUTS = "./data"
-
 
 def output_dir(prefix):
     experiment_path = "%s/%s/" % (D_OUTPUTS, prefix)
@@ -106,3 +107,29 @@ def load_all(name='', prefix=''):
         orders_dict = {}
 
     return clients, products, orders_dict, model
+
+# JSON field names
+J_PREFIX = "prefix"
+J_CLIENTS_COUNT = "clients_count"
+J_PRODUCTS_COUNT = "products_count"
+J_DAYS_COUNT = "days_count"
+J_DAY_INTERVAL = "day_interval"
+J_MODEL_NAME = "model_name"
+J_PART_SIZE = "part_size"
+
+
+class ConfigurationFile(object):
+
+    def __init__(self, json_file_path):
+        print "Loading configuration from: ", json_file_path
+        with open(json_file_path) as json_file:
+            json_data = json.load(json_file)
+        print json_data
+
+        self.base_prefix = json_data[J_PREFIX]
+        self.clients_count = json_data[J_CLIENTS_COUNT]
+        self.products_count = json_data[J_PRODUCTS_COUNT]
+        self.days_count = json_data[J_DAYS_COUNT]
+        self.day_interval = json_data[J_DAY_INTERVAL]  # continuous
+        self.model_name = json_data[J_MODEL_NAME]  # 'random'
+        self.part_size = json_data[J_PART_SIZE]

@@ -4,7 +4,8 @@
   "products_count": 100,
   "days_count": 10,
   "day_interval": 0,
-  "model_name": "rand"
+  "model_name": "rand",
+  "part_size": 0
 }
 
 
