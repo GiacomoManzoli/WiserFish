@@ -15,8 +15,8 @@ D_VERSION = "version_"
 
 def __output_dir(prefix, make_dirs=True):
     experiment_path = "./%s/%s/" % (D_OUTPUTS, prefix)
-    experiment_path_train = "%s/%s/" % (experiment_path, D_TRAIN)
-    experiment_path_test = "%s/%s/" % (experiment_path, D_TEST)
+    experiment_path_train = "%s%s/" % (experiment_path, D_TRAIN)
+    experiment_path_test = "%s%s/" % (experiment_path, D_TEST)
 
     if not os.path.exists(experiment_path) and make_dirs:
         os.makedirs(experiment_path)

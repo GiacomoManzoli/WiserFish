@@ -64,6 +64,8 @@ class BaselinePredictor(object):
         :param threshold:
         :return:
         """
+        if self.weights is None:
+            return None
         predictions = self.weights.copy()
         clients_count = predictions.shape[0]
         products_count = predictions.shape[1]
@@ -81,6 +83,8 @@ class BaselinePredictor(object):
         of orders by predicting a 1 only for the top-N raw predicted values
         :return:
         """
+        if self.weights is None:
+            return None
         clients_count = self.weights.shape[0]
         products_count = self.weights.shape[1]
 
@@ -99,6 +103,8 @@ class BaselinePredictor(object):
         return predictions
 
     def predict_proba(self):
+        if self.weights is None:
+            return None
         vectorized_weights = np.reshape(self.weights, (1, self.weights.size)) # (1x Nweights)
         result = np.ones(shape=(self.weights.size, 2))
         result[:, 0] = result[:, 0] - vectorized_weights
