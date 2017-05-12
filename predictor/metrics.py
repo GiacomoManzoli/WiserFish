@@ -7,10 +7,10 @@ def calculate_metrics(predictions, expected):
     clients_count = predictions.shape[0]
     products_count = predictions.shape[1]
 
-    true_positive = 0
-    true_negative = 0
-    false_positive = 0
-    false_negative = 0
+    true_positive = 0.0
+    true_negative = 0.0
+    false_positive = 0.0
+    false_negative = 0.0
 
     total = float(clients_count * products_count)
 

@@ -143,7 +143,7 @@ def generate_matrix(clients, products, t, model):  # t --> timestamp
             # product_copy = products.ix[p].copy()
             # product_copy['productId'] = p
             # matrix[c, p] = model.probability(client_copy, product_copy, t)
-            matrix[c, p] = model.probability(clients.ix[c], products.ix[p], t)
+            matrix[c, p] = model.will_make_order(clients.ix[c], products.ix[p], t)
     return matrix
 
 

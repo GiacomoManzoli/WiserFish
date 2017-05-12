@@ -4,11 +4,17 @@ import getopt
 import sys
 import time
 
-from util.file_helper import save_all, load_all, save_partial_orders, ConfigurationFile
+import datetime
+
+from generator.probability_models import ProbabilityModel
+from util.file_helper import ConfigurationFile, save_train_set, save_test_set, load_train_set, \
+    merge_partial_orders, D_TRAIN, D_VERSION, D_TEST
 from generator.generators import generate_dataset, generate_orders, generate_days
 
+NUMBER_OF_TEST_SET_VERSION = 5
 
 # TODO: quantities
+
 
 def main(argv):
     json_file_path = ""
@@ -58,10 +64,10 @@ def main(argv):
                                                        days_count=0,
                                                        day_interval=0,
                                                        model_name=config.model_name)
-        save_all(clients, products, {}, model, config.base_prefix, prefix)
+        save_train_set(clients, products, {}, model, config.base_prefix, prefix)
     elif is_partial:
         # load the data, select only the right part and generates the orders
-        clients, products, _, model = load_all(config.base_prefix, prefix)
+        clients, products, _, model = load_train_set(config.base_prefix, prefix)
 
         part_from = config.part_size * part
         part_to = config.part_size * (part+1)
@@ -74,22 +80,48 @@ def main(argv):
 
         orders = generate_orders(clients, products, days, model)
         prefix = 'part%d_%s' % (part, prefix)
-        save_all(clients, products, orders, model, config.base_prefix, prefix)
+
+        save_train_set(clients, products, orders, model, config.base_prefix, prefix)
+        generate_test_set(clients, products, model, config, prefix)
     elif is_recombine:
         # recombines the partial orders in a single file
         # loads the clients and the products
-        clients, products, _, model = load_all(config.base_prefix, prefix)
+        _, _, _, model = load_train_set(config.base_prefix, prefix)
         total_parts = config.clients_count / config.part_size
         partial_prefixes = ['part%d_%s' % (i, prefix) for i in range(0, total_parts)]
         # merge the partials and generates the complete file
-        save_partial_orders(config.base_prefix, partial_prefixes, prefix)
+        merge_partial_orders(config.base_prefix+'/'+D_TRAIN, partial_prefixes, prefix)
+
+        for i in range(0, NUMBER_OF_TEST_SET_VERSION):
+            base_prefix = config.base_prefix+'/'+D_TEST+'/'+D_VERSION+str(i)
+            merge_partial_orders(base_prefix, partial_prefixes, prefix)
     else:
         clients, products, orders, model = generate_dataset(clients_count=config.clients_count,
                                                             products_count=config.products_count,
                                                             days_count=config.days_count,
                                                             day_interval=config.day_interval,
                                                             model_name=config.model_name)
-        save_all(clients, products, orders, model, config.base_prefix, prefix)
+        save_train_set(clients, products, orders, model, config.base_prefix, prefix)
+        generate_test_set(clients, products, model, config, prefix)
+
+
+def generate_test_set(clients, products, model, config, prefix):
+    # type: (pd.DataFrame, pd.DataFrame, ProbabilityModel, ConfigurationFile, str) -> None
+    """
+    Generates 5 possibile test set for the data, each one composed by two matrix, one for the todays orders
+    and one for the the day after tomorrow orders.
+    """
+    print "Generating test set..."
+    today_timestamp = time.time()  # current timestamp
+    after_tomorrow = datetime.date.today() + datetime.timedelta(days=2)
+    after_tomorrow_timestamp = time.mktime(after_tomorrow.timetuple())
+    days = [today_timestamp, after_tomorrow_timestamp]
+
+    for i in range(0, NUMBER_OF_TEST_SET_VERSION):
+        print "Version", i
+        orders = generate_orders(clients, products, days, model)
+        save_test_set(clients, products, orders, config.base_prefix, prefix, version=i)
+    return
 
 
 if __name__ == '__main__':

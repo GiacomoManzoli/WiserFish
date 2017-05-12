@@ -1,3 +1,4 @@
+import csv
 import json
 
 import pandas as pd
@@ -5,35 +6,34 @@ import numpy as np
 import pickle
 import os
 
-
 # Nomi delle directory
-D_OUTPUTS = "./data"
+D_OUTPUTS = "data"
+D_TRAIN = "train_set"
+D_TEST = "test_set"
+D_VERSION = "version_"
 
-def output_dir(prefix):
-    experiment_path = "%s/%s/" % (D_OUTPUTS, prefix)
-    if not os.path.exists(experiment_path):
+
+def __output_dir(prefix, make_dirs=True):
+    experiment_path = "./%s/%s/" % (D_OUTPUTS, prefix)
+    experiment_path_train = "%s/%s/" % (experiment_path, D_TRAIN)
+    experiment_path_test = "%s/%s/" % (experiment_path, D_TEST)
+
+    if not os.path.exists(experiment_path) and make_dirs:
         os.makedirs(experiment_path)
-    return experiment_path
+    if not os.path.exists(experiment_path_train) and make_dirs:
+        os.makedirs(experiment_path_train)
+    if not os.path.exists(experiment_path_test) and make_dirs:
+        os.makedirs(experiment_path_test)
+    return experiment_path, experiment_path_train, experiment_path_test
 
 
-def save_all(clients, products, orders, model, name='', prefix=''):
-    # type: (pd.DataFrame, pd.DataFrame, dict, str, str) -> None
-    """Saves the pandas DataFrame and the orders dict as csv files inside the 'data' directory"""
+################################################################
+# AUX FUNCTIONS
+################################################################
 
-    if name == '':
-        name = prefix
-    base_path = output_dir(name)
-
-    if prefix != '' and prefix[-1] != '_':
-        prefix += '_'
-
-    print "Saving into:", base_path, prefix
-    clients.to_csv('%s%sclients.csv' % (base_path, prefix), index=False)
-    products.to_csv('%s%sproducts.csv' % (base_path, prefix), index=False)
-    with open('%s%spmodel.pkl' % (base_path, prefix), 'wb') as output:
-        pickle.dump(model, output, pickle.HIGHEST_PROTOCOL)
+def __save_orders(orders, clients, products, filename):
     # orders -> dictionary, keys:Datetime, values:np.ndarray
-    # saves only the orders (the ones of the matrix)
+    # saves only the orders
 
     orders_rows = []
     for key in orders.keys():
@@ -48,14 +48,152 @@ def save_all(clients, products, orders, model, name='', prefix=''):
                         'clientId': clients.iloc[c]['clientId'],
                         'productId': products.iloc[p]['productId']
                     })
+    df_cols = ['datetime', 'clientId', 'productId']
     if len(orders_rows) != 0:
-        orders_df = pd.DataFrame(orders_rows, columns=['datetime', 'clientId', 'productId'])
-        orders_df.to_csv('%s%sorders.csv' % (base_path, prefix), index=False)
+        orders_df = pd.DataFrame(orders_rows, columns=df_cols)
+        orders_df.to_csv(filename, index=False)
+    else:
+        # writes an empty file
+        with open(filename, 'wb') as f:
+            writer = csv.writer(f, delimiter=',')
+            writer.writerow(df_cols)
 
 
-def save_partial_orders(name, prefixes, result_prefix):
+def __load_orders(filename, matrix_shape):
+    """
+    Loads the orders from the csv file in the dict-of-matrix form
+    :param filename:
+    :param matrix_shape:
+    :return:
+    """
+    try:
+        orders = pd.read_csv(filename)
+        orders_dict = {}
+        for idx, row in orders.iterrows():
+            key = int(row['datetime'])  # timestamp dell'ordine
+            if key not in orders_dict.keys():
+                orders_dict[key] = np.zeros(shape=matrix_shape)
+
+            orders_dict[key][int(row['clientId']), int(row['productId'])] = 1
+    except IOError:
+        print "Couldn't load the orders"
+        orders_dict = {}
+    return orders_dict
+
+
+################################################################
+# SAVE AND LOAD OF THE TRAIN DATASET
+################################################################
+
+def save_train_set(clients, products, orders, model, name='', prefix=''):
+    # type: (pd.DataFrame, pd.DataFrame, dict, str, str) -> None
+    """Saves the pandas DataFrame and the orders dict as csv files inside the 'data' directory"""
+
+    if name == '':
+        name = prefix
+    base_path, train_set_path, _ = __output_dir(name)
+
+    if prefix != '' and prefix[-1] != '_':
+        prefix += '_'
+
+    print "Saving common data into:", base_path
+    clients.to_csv('%s%sclients.csv' % (base_path, prefix), index=False)
+    products.to_csv('%s%sproducts.csv' % (base_path, prefix), index=False)
+    with open('%s%spmodel.pkl' % (base_path, prefix), 'wb') as output:
+        pickle.dump(model, output, pickle.HIGHEST_PROTOCOL)
+
+    print "Saving TRAIN SET into:", train_set_path, prefix
+    orders_file_name = '%s%sorders.csv' % (train_set_path, prefix)
+    __save_orders(orders, clients, products, orders_file_name)
+
+
+def load_train_set(name='', prefix=''):
+    """Loads the clients and products DataFrames and the orders dictionary from the 'data' directory (TRAIN set)"""
+
+    if name == '':
+        name = prefix
+    base_path, train_set_path, _ = __output_dir(name)
+
+    if prefix != '' and prefix[-1] != '_':
+        prefix += '_'
+
+    print "Loading from:", base_path, prefix
+    clients = pd.read_csv('%s%sclients.csv' % (base_path, prefix))
+    products = pd.read_csv('%s%sproducts.csv' % (base_path, prefix))
+    with open('%s%spmodel.pkl' % (base_path, prefix), 'rb') as input_file:
+        model = pickle.load(input_file)
+
+    orders_shape = (clients.shape[0], products.shape[0])
+    orders_filename = '%s%sorders.csv' % (train_set_path, prefix)
+    orders_dict = __load_orders(orders_filename, orders_shape)
+
+    return clients, products, orders_dict, model
+
+
+################################################################
+# SAVE AND LOAD OF THE TEST DATASET
+################################################################
+
+def save_test_set(clients, products, orders, name='', prefix='', version=None):
+    if name == '':
+        name = prefix
+    _, _, test_set_path = __output_dir(name)
+
+    if prefix != '' and prefix[-1] != '_':
+        prefix += '_'
+
+    if version is not None:
+        test_set_path = "%s%s%d/" % (test_set_path, D_VERSION, version)
+        if not os.path.exists(test_set_path):
+            os.makedirs(test_set_path)
+
+    print "Saving TEST SET into:", test_set_path, prefix
+    orders_file_name = '%s%sorders.csv' % (test_set_path, prefix)
+    __save_orders(orders, clients, products, orders_file_name)
+
+
+def load_test_set(name='', prefix='', version=None):
+    """Loads the clients and products DataFrames and the orders dictionary from the 'data' directory (TEST set)"""
+
+    if name == '':
+        name = prefix
+    base_path, _, test_set_path = __output_dir(name)
+
+    if version is not None:
+        test_set_path = "%sversion_%d/" % (test_set_path, version)
+
+    if prefix != '' and prefix[-1] != '_':
+        prefix += '_'
+
+    print "Loading from:", base_path, prefix
+    clients = pd.read_csv('%s%sclients.csv' % (base_path, prefix))
+    products = pd.read_csv('%s%sproducts.csv' % (base_path, prefix))
+    with open('%s%spmodel.pkl' % (base_path, prefix), 'rb') as input_file:
+        model = pickle.load(input_file)
+
+    orders_shape = (clients.shape[0], products.shape[0])
+    orders_filename = '%s%sorders.csv' % (test_set_path, prefix)
+    orders_dict = __load_orders(orders_filename, orders_shape)
+
+    return clients, products, orders_dict, model
+
+
+################################################################
+# PARTIALS LOADING/SAVING
+################################################################
+
+def merge_partial_orders(name, prefixes, result_prefix):
+    # type: (str, [str], str) -> None
+    """
+    Loads the several partial files defined in prefixes, merges all the associated
+    dataframe into one and then saves it on file.
+    :param name:
+    :param prefixes:
+    :param result_prefix:
+    :return:
+    """
     assert len(prefixes) >= 1
-    base_path = output_dir(name)
+    base_path, _, _ = __output_dir(name, False)
 
     print "Saving orders into:", base_path
 
@@ -73,40 +211,9 @@ def save_partial_orders(name, prefixes, result_prefix):
     orders.to_csv('%s%sorders.csv' % (base_path, result_prefix), index=False)
 
 
-def load_all(name='', prefix=''):
-    """Loads the clients and products DataFrames and the orderd dictionary from the 'data' directory"""
-
-    if name == '':
-        name = prefix
-    base_path = output_dir(name)
-
-    if prefix != '' and prefix[-1] != '_':
-        prefix += '_'
-
-    print "Loading from:", base_path, prefix
-    clients = pd.read_csv('%s%sclients.csv' % (base_path, prefix))
-    products = pd.read_csv('%s%sproducts.csv' % (base_path, prefix))
-    with open('%s%spmodel.pkl' % (base_path, prefix), 'rb') as input_file:
-        model = pickle.load(input_file)
-
-    try:
-        orders = pd.read_csv('%s%sorders.csv' % (base_path, prefix))
-
-        clients_count = clients.shape[0]  # shape[0] == row count
-        products_count = products.shape[0]
-
-        orders_dict = {}
-        for idx, row in orders.iterrows():
-            key = int(row['datetime'])  # timestamp dell'ordine
-            if key not in orders_dict.keys():
-                orders_dict[key] = np.zeros(shape=(clients_count, products_count))
-
-            orders_dict[key][int(row['clientId']), int(row['productId'])] = 1
-    except IOError:
-        print "Couldn't load the orders"
-        orders_dict = {}
-
-    return clients, products, orders_dict, model
+################################################################
+# CONFIGURATION FILE HELPER
+################################################################
 
 # JSON field names
 J_PREFIX = "prefix"
@@ -119,7 +226,6 @@ J_PART_SIZE = "part_size"
 
 
 class ConfigurationFile(object):
-
     def __init__(self, json_file_path):
         print "Loading configuration from: ", json_file_path
         with open(json_file_path) as json_file:
