@@ -1,0 +1,9 @@
+{
+  "prefix": "medium_cond",
+  "clients_count": 50,
+  "products_count": 100,
+  "days_count": 1460,
+  "day_interval": 0,
+  "model_name": "cond",
+  "part_size": 5
+}
