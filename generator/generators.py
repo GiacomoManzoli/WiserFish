@@ -168,7 +168,7 @@ def generate_orders(clients, products, days, model):
 ###########################
 
 def generate_days(days_count, day_interval=0):
-    return [time.time() - SECS_IN_DAY * i * (day_interval + 1) for i in range(1, days_count+1)]  # starts from today
+    return [time.time() - SECS_IN_DAY * i * (day_interval + 1) for i in range(1, days_count+1)]  # starts from yesterday
 
 
 def generate_dataset(clients_count, products_count, days_count, day_interval=0, model_name='random'):
@@ -202,3 +202,29 @@ def generate_dataset(clients_count, products_count, days_count, day_interval=0, 
 
     return clients, products, orders, model
 
+
+###########################
+# UTILITIES
+###########################
+
+def __check_generated_days(days):
+    today_ts = time.time();
+    str_time = '%Y-%m-%d'
+
+    print "Today", datetime.datetime.fromtimestamp(today_ts).strftime(str_time)
+    print "----"
+
+    counters = {}
+
+    for day in days:
+        day_date = datetime.datetime.fromtimestamp(day)
+        t = day_date.timetuple().tm_yday
+
+        if t not in counters.keys():
+            counters[t] = 0
+        counters[t] += 1
+        print "Day", day_date.strftime(str_time), "- T", day_date.timetuple().tm_yday
+
+    print "----"
+    for k in counters.keys():
+        print "Period", k, "Frequence", counters[k]
