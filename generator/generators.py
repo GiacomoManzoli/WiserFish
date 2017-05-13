@@ -208,7 +208,7 @@ def generate_dataset(clients_count, products_count, days_count, day_interval=0, 
 ###########################
 
 def __check_generated_days(days):
-    today_ts = time.time();
+    today_ts = time.time()
     str_time = '%Y-%m-%d'
 
     print "Today", datetime.datetime.fromtimestamp(today_ts).strftime(str_time)

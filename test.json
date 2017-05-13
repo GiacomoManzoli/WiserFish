@@ -1,8 +1,8 @@
 {
-  "prefix": "test",
-  "clients_count": 50,
+  "prefix": "debug",
+  "clients_count": 10,
   "products_count": 100,
-  "days_count": 1460,
+  "days_count": 50,
   "day_interval": 0,
   "model_name": "cond",
   "part_size": 5

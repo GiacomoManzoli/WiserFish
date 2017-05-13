@@ -11,9 +11,11 @@ from sklearn.naive_bayes import BernoulliNB
 from sklearn.metrics import roc_auc_score
 
 from predictor.baseline import BaselinePredictor
+from predictor.less_sinful_baseline import LessSinfulBaselinePredictor
 from predictor.metrics import calculate_metrics
 from predictor.proposizionalizer import proposizionalize
 from generator.generators import generate_dataset, generate_orders
+from predictor.sinful_baseline import SinfulBaselinePredictor
 from util import ConfigurationFile, os, load_train_set, load_test_set
 
 SECS_IN_DAY = 60*60*24
@@ -134,6 +136,8 @@ def main(argv):
     # Predictions
     ############################
     base_predictor = BaselinePredictor()
+    sinful = SinfulBaselinePredictor()
+    less = LessSinfulBaselinePredictor()
     tree5 = tree.DecisionTreeClassifier(max_depth=5)
     treeN = tree.DecisionTreeClassifier()
     tree10 = tree.DecisionTreeClassifier(max_depth=10)
@@ -142,6 +146,8 @@ def main(argv):
 
     clfs = [
         ("base", base_predictor),
+        ("sinful", sinful),
+        ("less", less),
         ("tree_5", tree5),
         ("tree_10", tree10),
         ("tree_N", treeN),
@@ -163,13 +169,23 @@ def main(argv):
                 # X or X_base -> train data set
                 # X_test_prop -> test data set (not needed for BasePredictor)
                 predictions = None
-                if name == "base":
-                    if len(X_base.keys()) > 0:
+                predictions_probabilities = None
+                if len(X_base.keys()) > 0:
+                    if name == "base":
                         clf.fit(X_base)  # BaselinePredictor works in a different way then a sklearn classifier
                         predictions = clf.predict_with_topn()  # returns a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba()  # retruns a matrix like a SKLearn classifier
-                else:
-                    if len(X_base.keys()) > 0:
+                    elif name == "less":
+                        t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+                        clf.fit(X_base)
+                        predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
+                        predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
+                    elif name == "sinful":
+                        t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+                        clf.fit(clients, products, X_base)
+                        predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
+                        predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
+                    else:
                         clf.fit(X, y)
                         predictions = clf.predict(X_test_prop)
                         predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix
