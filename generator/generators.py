@@ -84,6 +84,8 @@ def generate_clients(cnt):
 
     clients = clients.join(clients_data)
 
+    clients['clientId'] = clients['clientId'].astype(dtype=int)
+    clients['class'] = clients['class'].astype(dtype=int)
     return clients
 
 
@@ -123,6 +125,11 @@ def generate_products(cnt):
 
     products = products.join(products_data)
 
+    # Sets correct datatype
+    #print products.head()
+    products['productId'] = products['productId'].astype(dtype=int)
+    products['class'] = products['class'].astype(dtype=int)
+    #print products.head()
     return products
 
 

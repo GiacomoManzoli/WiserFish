@@ -16,9 +16,9 @@ from predictor.metrics import calculate_metrics
 from predictor.proposizionalizer import proposizionalize
 from generator.generators import generate_dataset, generate_orders
 from predictor.sinful_baseline import SinfulBaselinePredictor
+from predictor.single_regressor_predictor import SingleRegressorPredictor
 from util import ConfigurationFile, os, load_train_set, load_test_set
 
-SECS_IN_DAY = 60*60*24
 
 # JSON field names
 J_PREFIX = "prefix"
@@ -145,14 +145,17 @@ def main(argv):
     forest = ensemble.RandomForestClassifier()
 
     clfs = [
-        ("base", base_predictor),
-        ("sinful", sinful),
-        ("less", less),
-        ("tree_5", tree5),
-        ("tree_10", tree10),
-        ("tree_N", treeN),
-        ("bern", bern),
-        ("forest", forest)
+        #("base", base_predictor),
+        #("sinful", sinful),
+        #("less", less),
+        #("tree_5", tree5),
+        #("tree_10", tree10),
+        #("tree_N", treeN),
+        #("bern", bern),
+        #("forest", forest),
+        ("single_1", SingleRegressorPredictor(group_size=1)),
+        ("single_3", SingleRegressorPredictor(group_size=3)),
+        ("single_5", SingleRegressorPredictor(group_size=5))
     ]
 
     with open("%s/%s.csv" % (OUT_DIR_NAME, run_name), 'wb') as output:
@@ -185,6 +188,13 @@ def main(argv):
                         clf.fit(clients, products, X_base)
                         predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
+                    elif name == "single_1" or name == "single_3" or name == "single_5" or name == "single":
+                        clf.fit(clients, products, orders, X_base)
+                        ts = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+                        predictions = clf.predict_with_topn(ts)
+                        predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix
+                        predictions_probabilities = clf.predict_proba(ts)
+
                     else:
                         clf.fit(X, y)
                         predictions = clf.predict(X_test_prop)

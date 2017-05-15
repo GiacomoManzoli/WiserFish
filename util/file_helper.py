@@ -51,6 +51,9 @@ def __save_orders(orders, clients, products, filename):
     df_cols = ['datetime', 'clientId', 'productId']
     if len(orders_rows) != 0:
         orders_df = pd.DataFrame(orders_rows, columns=df_cols)
+        orders_df['datetime'] = orders_df['datetime'].astype(dtype=long)
+        orders_df['clientId'] = orders_df['clientId'].astype(dtype=int)
+        orders_df['productId'] = orders_df['productId'].astype(dtype=int)
         orders_df.to_csv(filename, index=False)
     else:
         # writes an empty file

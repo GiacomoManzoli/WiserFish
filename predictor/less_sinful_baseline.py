@@ -4,8 +4,6 @@ import math
 
 from generator.probability_models import ProbabilityModel
 
-SECS_IN_DAY = 60 * 60 * 24
-
 
 class LessSinfulBaselinePredictor(object):
     """
@@ -102,7 +100,7 @@ class LessSinfulBaselinePredictor(object):
         probs = np.zeros(shape=(clients_count, products_count))
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                probs[c,p] = self.__calculate_order_probability(c, p, t)
+                probs[c, p] = self.__calculate_order_probability(c, p, t)
 
         # copy is needed because reasons... (reshape + sort)
 

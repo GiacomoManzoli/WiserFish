@@ -4,8 +4,6 @@ import math
 
 from generator.probability_models import CondProbabilityModel
 
-SECS_IN_DAY = 60 * 60 * 24
-
 
 class SinfulBaselinePredictor(object):
     """

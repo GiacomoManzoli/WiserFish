@@ -16,21 +16,20 @@ from predictor.metrics import calculate_metrics
 from predictor.proposizionalizer import proposizionalize
 from generator.generators import generate_dataset, generate_orders
 from predictor.sinful_baseline import SinfulBaselinePredictor
+from predictor.single_regressor_predictor import SingleRegressorPredictor
 from util import ConfigurationFile, os, load_train_set, load_test_set
 
 
 def main(argv):
     clients, products, orders, model = generate_dataset(clients_count=10,
-                                                        products_count=50,
+                                                        products_count=100,
                                                         days_count=50,
                                                         day_interval=0,
                                                         model_name='cond')
     print "Generation of the test set for today and after tomorrow..."
     # Query data
     today_timestamp = time.time()  # current timestamp
-    after_tomorrow = datetime.date.today() + datetime.timedelta(days=2)
-    after_tomorrow_timestamp = time.mktime(after_tomorrow.timetuple())
-    days = [today_timestamp, after_tomorrow_timestamp]
+    days = [today_timestamp]
     # Generates the y_test for the dataset using the probability model
     test_orders = generate_orders(clients, products, days, model)
 
@@ -83,21 +82,14 @@ def main(argv):
     ############################
     # Predictions
     ############################
-    base_predictor = BaselinePredictor()
-    sinful = SinfulBaselinePredictor()
-    less = LessSinfulBaselinePredictor()
-    treeN = tree.DecisionTreeClassifier()
+    single = SingleRegressorPredictor()
 
     clfs = [
-        ("base", base_predictor),
-        ("sinful", sinful),
-        ("less", less),
-        ("tree_N", treeN),
+        ("single", single)
     ]
 
     for query in queries:
         query_name, X_test_prop, y_test, y_test_vec = query
-        # Note: X_test_prop is a np.Dataframe and it can be used with SKlearn
         print "Expected:"
         print y_test
         for pair in clfs:
@@ -108,25 +100,11 @@ def main(argv):
             predictions = None
             predictions_probabilities = None
             if len(X_base.keys()) > 0:
-                if name == "base":
-                    clf.fit(X_base)  # BaselinePredictor works in a different way then a sklearn classifier
-                    predictions = clf.predict_with_topn()  # returns a NClients x NProducts matrix
-                    predictions_probabilities = clf.predict_proba()  # retruns a matrix like a SKLearn classifier
-                elif name == "less":
-                    t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
-                    clf.fit(X_base)
-                    predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
-                    predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
-                elif name == "sinful":
-                    t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
-                    clf.fit(clients, products, X_base)
-                    predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
-                    predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
-                else:
-                    clf.fit(X, y)
-                    predictions = clf.predict(X_test_prop)
+                    clf.fit(clients, products, orders, X_base)
+                    ts = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+                    predictions = clf.predict_with_topn(ts)
                     predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix
-                    predictions_probabilities = clf.predict_proba(X_test_prop)
+                    predictions_probabilities = clf.predict_proba(ts)
 
             if predictions is not None:
                 # print predictions
