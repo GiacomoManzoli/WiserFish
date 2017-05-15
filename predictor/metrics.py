@@ -3,7 +3,8 @@ import numpy as np
 
 def calculate_metrics(predictions, expected):
     # type: (np.ndarray, np.ndarray) -> (float, float, float)
-    """Calculate accuracy, precision and recall obtained comparing the predictions' matrix with the expected result"""
+    """Calcola accuracy, precision and recall confrontando la matrice predetta con quella dei risultati attesi
+    """
     clients_count = predictions.shape[0]
     products_count = predictions.shape[1]
 

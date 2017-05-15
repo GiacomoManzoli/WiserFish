@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import datetime
 import numpy as np
 import math
@@ -7,18 +8,24 @@ from generator.probability_models import ProbabilityModel
 
 class LessSinfulBaselinePredictor(object):
     """
-    Predictor which uses only the period sinusoid form the probability model for the data generation instead
-    of all the model (hence LessSinful).
-    P_p, P_c and P_cp are approximated using the train set (with the average).
+    Predicttore che usa la stessa sinusoide del modello di probabilità che modella l'andamento periodico degli ordini.
+    (per questo è stato chiamato less-sinful)
+    P_p, P_c e P_cp sono approssimate prendendo il valore medio del train set
     """
 
     def __init__(self):
         self.avg_ones = None
-        self.pp_estimation = None  # Estimation of P(p)
-        self.pc_estimation = None  # Estimation of P(c)
-        self.pcp_estimation = None  # Estimation of P(cp)
+        self.pp_estimation = None  # Stima di P(p)
+        self.pc_estimation = None  # Stima di P(c)
+        self.pcp_estimation = None  # Stima di P(cp)
 
     def fit(self, matrices):
+        # type: (dict) -> None
+        """
+        Inizializza la classe
+        :param matrices: dizionario di matrici degli ordini
+        :return:
+        """
         sample = matrices[matrices.keys()[0]]
         self.pcp_estimation = np.zeros(shape=sample.shape)
 
@@ -28,7 +35,7 @@ class LessSinfulBaselinePredictor(object):
         self.pp_estimation = np.zeros(shape=(products_count,))
         self.pc_estimation = np.zeros(shape=(clients_count,))
 
-        ones_cnt = 0  # counts the total number of orders
+        ones_cnt = 0
         days_count = len(matrices.keys())
         for day in matrices.keys():
             ones_cnt += matrices[day].sum()
@@ -37,19 +44,27 @@ class LessSinfulBaselinePredictor(object):
                     self.pcp_estimation[c, p] += matrices[day][c, p] / days_count
                     self.pp_estimation[p] += matrices[day][c, p] / days_count
                     self.pc_estimation[c] += matrices[day][c, p] / days_count
-        # estimations[c, p] = # of times that the client c bought the product p
-        # ^ estimate of p(c,p)
-        # pp_estimation[p] = # of times that the product p has been bought
-        # ^ estimate of p(p)
-        # pc_estimation[p] = # of times that the client c acquired a product
+        # estimations[c, p] = # di volte che il cliente c ha effettuato un ordine
+        # ^ stima di p(c,p)
+        # pp_estimation[p] = # di volte che il prodotto p è stato ordinato
+        # ^ stima di p(p)
+        # pc_estimation[p] = # di volte che il cliente c ha ordinato il prodotto p
 
-        # calculates the average number of orders in a day
+        # Calcola il numero giornaliero di ordini medio
         avg = float(ones_cnt) / float(len(matrices.keys()))
         avg = int(math.ceil(avg))
         self.avg_ones = 1 if avg == 0 else avg
         return
 
     def __calculate_order_probability(self, c, p, t):
+        # type: (int, int, int) -> float
+        """
+        Calcola la probabilità che il cliente c ordini il prodotto p nel periodo t
+        :param c: (int) posizione del cliente nella matrice (coincide con l'id)
+        :param p: (int) posizione del prodotot nella matrice (coincide con l'id) 
+        :param t: (int) periodo dell'anno
+        :return: probabilità che venga effettuato l'ordine
+        """
         p_t = ProbabilityModel.period_probability(t)
         p_c = self.pc_estimation[c]
         p_p = self.pp_estimation[p]
@@ -57,11 +72,12 @@ class LessSinfulBaselinePredictor(object):
         return p_c * p_p * p_cp * p_t
 
     def predict_with_threshold(self, order_timestamp, threshold):
+        # type: (long, float) -> np.ndarray or None
         """
-        Predicts a 1 if the probability predicted value is greater than the given threshold
-        :param order_timestamp:
-        :param threshold:
-        :return:
+        Predice un ordine (1) se la corrispondente probabilità stimata è maggiore del parametro threshold passato
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :param threshold: (float) soglia sopra la quale prevedere un 1
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
         if self.pcp_estimation is None:
             return None
@@ -83,10 +99,12 @@ class LessSinfulBaselinePredictor(object):
         return predictions
 
     def predict_with_topn(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        First it calculates the average number of orders in a day and then predicts (approximately) the average number
-        of orders by predicting a 1 only for the top-N raw predicted values
-        :return:
+        Utilizza come threshold per le predizioni un valore tale che vengono predetti tanti ordini quanto è il numero
+        medio di orgini che viene effettuato giornalmente
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
         if self.pcp_estimation is None:
             return None
@@ -94,7 +112,6 @@ class LessSinfulBaselinePredictor(object):
         products_count = self.pcp_estimation.shape[1]
 
         order_date = datetime.datetime.fromtimestamp(order_timestamp)
-        # print order_date.strftime('%Y-%m-%d %H:%M:%S')
         t = order_date.timetuple().tm_yday  # Day of the year
 
         probs = np.zeros(shape=(clients_count, products_count))
@@ -102,19 +119,23 @@ class LessSinfulBaselinePredictor(object):
             for p in range(0, products_count):
                 probs[c, p] = self.__calculate_order_probability(c, p, t)
 
-        # copy is needed because reasons... (reshape + sort)
-
+        # Serve la copia perché numpy sfasa un po' di cose... (reshape + sort)
         probs_vec = np.reshape(probs.copy(), probs.size)
-        probs_vec[::-1].sort()  # in place revese sort
+        probs_vec[::-1].sort()  # Magicamente fa l'inplace reverse-sort
 
         threshold = probs_vec[self.avg_ones - 1]
         return self.predict_with_threshold(order_timestamp, threshold)
 
     def predict_proba(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        Retuns the predicted probabilities in a sklearn-like fashion
-        :param order_timestamp:
-        :return:
+        Ritorna la matrice contenente le probabilità che vengano effettuati degli ordini nel giorno specificato come
+        parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice con le probabilità di effettuare un ordine il giorno specificato dal timestamp.
+                 La matrice è nel formato (numero_coppie, 2) dove `numero_coppie` = numero clienti x numero prodotti.
+                 La prima colonna della matrice contiene la probabilità della classe 0, mentre la seconda colonna
+                 contiene quella della classe 1.
         """
         if self.pcp_estimation is None:
             return None

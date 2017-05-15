@@ -1,4 +1,6 @@
+# -*- coding: utf-8 -*-
 import datetime
+import pandas as pd
 import numpy as np
 import math
 
@@ -7,9 +9,9 @@ from generator.probability_models import CondProbabilityModel
 
 class SinfulBaselinePredictor(object):
     """
-    Predictor which uses the same probability model used for the generation of the data.
-    The prediction is made in a TopN fashion, selecting the average number of orders.
-    (The generation aglorithm instead of an average uses a weighted choice)
+    Predittore che usa lo stesso modello di probabilità utilizzato per generare i dati.
+    La predizione viene scegliendo gli ordini con una probabilità maggiore (come per gli altri
+    classificatori) e NON come nella generazione dei dati (scelta pesata in base alla probabilità).
     """
 
     def __init__(self):
@@ -19,6 +21,14 @@ class SinfulBaselinePredictor(object):
         self.avg_ones = None
 
     def fit(self, clients, products, matrices):
+        # type: (pd.DataFrame, pd.DataFrame, dict) -> None
+        """
+        Inizializza il predittore
+        :param products: dataframe con i dati dei clienti
+        :param clients: dataframe con i dati dei prodotti
+        :param matrices: dizionario di matrici degli ordini
+        :return:
+        """
         self.clients = clients
         self.products = products
         self.prob_model = CondProbabilityModel(clients, products)
@@ -33,11 +43,13 @@ class SinfulBaselinePredictor(object):
         return
 
     def predict_with_threshold(self, order_timestamp, threshold):
+         # type: (long, float) -> np.ndarray or None
         """
-        Predicts a 1 if the probability predicted value is greater than the given threshold
-        :param order_timestamp:
-        :param threshold:
-        :return:
+        Predice un ordine (1) se il corrispondente peso della matrice weights è maggiore del threshold passato
+        come parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :param threshold: (float) soglia sopra la quale prevedere un 1
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
         if self.prob_model is None:
             return None
@@ -46,7 +58,6 @@ class SinfulBaselinePredictor(object):
         products_count = self.products.shape[0]
 
         order_date = datetime.datetime.fromtimestamp(order_timestamp)
-        # print order_date.strftime('%Y-%m-%d %H:%M:%S')
         t = order_date.timetuple().tm_yday  # Day of the year
 
         predictions = np.ndarray(shape=(clients_count, products_count))
@@ -57,10 +68,12 @@ class SinfulBaselinePredictor(object):
         return predictions
 
     def predict_with_topn(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        First it calculates the average number of orders in a day and then predicts (approximately) the average number
-        of orders by predicting a 1 only for the top-N raw predicted values
-        :return:
+        Utilizza come threshold per le predizioni un valore tale che vengono predetti tanti ordini quanto è il numero
+        medio di orgini che viene effettuato giornalmente
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
         if self.prob_model is None:
             return None
@@ -85,10 +98,15 @@ class SinfulBaselinePredictor(object):
         return self.predict_with_threshold(order_timestamp, threshold)
 
     def predict_proba(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        Retuns the predicted probabilities in a sklearn-like fashion
-        :param order_timestamp:
-        :return:
+        Ritorna la matrice contenente le probabilità che vengano effettuati degli ordini nel giorno specificato come
+        parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice con le probabilità di effettuare un ordine il giorno specificato dal timestamp.
+                 La matrice è nel formato (numero_coppie, 2) dove `numero_coppie` = numero clienti x numero prodotti.
+                 La prima colonna della matrice contiene la probabilità della classe 0, mentre la seconda colonna
+                 contiene quella della classe 1.
         """
         if self.prob_model is None:
             return None
@@ -97,7 +115,6 @@ class SinfulBaselinePredictor(object):
         products_count = self.products.shape[0]
 
         order_date = datetime.datetime.fromtimestamp(order_timestamp)
-        # print order_date.strftime('%Y-%m-%d %H:%M:%S')
         t = order_date.timetuple().tm_yday  # Day of the year
 
         probs = np.zeros(shape=(clients_count, products_count))

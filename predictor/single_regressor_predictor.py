@@ -1,12 +1,9 @@
-import datetime
-
+# -*- coding: utf-8 -*-
 import pandas as pd
 from sklearn import linear_model
-
 import numpy as np
 import math
 
-from generator.probability_models import ProbabilityModel
 from predictor.proposizionalizer import proposizionalize
 
 SECS_IN_DAY = int(60 * 60 * 24)
@@ -14,30 +11,45 @@ SECS_IN_DAY = int(60 * 60 * 24)
 
 class SingleRegressorPredictor(object):
     """
-    Predictor which uses one Regressor for each cell of the matrix to estimate if the there will be an order
-    for the pair (c,p)
+    Predittore che usa un regressore per ogni cella della matrice clienti-prodotti per approssimare
+    la probabilità di una vendita al variare del periodo.
+    I regressori possono essere addestrati sui dati giornalieri oppure aggregando i giorni.
     """
 
     def __init__(self, group_size=5):
+        # type: (int) -> None
         self.avg_ones = None
-        self.group_size = int(group_size)
+        self.group_size = group_size
         self.regressor_matrix = None
         self.clients = None
         self.products = None
 
     def __extract_day_group(self, dataset):
+        # type: (pd.DataFrame) -> pd.DataFrame
+        """
+        Aggiunge la colonna `day_group` al dataset.
+        Vengono rimossse le colonne: `datetime`, `year` e `day_of_year`.
+        :param dataset: dataset al quale aggiungere la colonna `day_group`
+        :return: 
+        """
         df = dataset
         df['day_group'] = df['datetime'] / (SECS_IN_DAY * self.group_size)
         df['day_group'] = df['day_group'].astype(int)
-        df = df.drop('datetime', axis=1)
-        df = df.drop('year', axis=1)
-        df = df.drop('day_of_year', axis=1)
+        df = df.drop(['datetime', 'year', 'day_of_year'], axis=1)
         return df
 
-    def fit(self, clients, products, orders, matrices):
+    def fit(self, clients, products, matrices):
+        # type: (pd.DataFrame, pd.DataFrame, dict) -> None
+        """
+        Inizializza il predittore
+        :param clients: dataframe con i dati dei clienti
+        :param products: dataframe con i dati dei prodotti
+        :param matrices: dizionario con le matrici degli ordini
+        :return: 
+        """
         self.clients = clients
         self.products = products
-        dataset = proposizionalize(orders, clients, products)
+        dataset = proposizionalize(matrices, clients, products)
 
         client_cnt = dataset['client_id'].nunique()
         product_cnt = dataset['product_id'].nunique()
@@ -49,16 +61,14 @@ class SingleRegressorPredictor(object):
             c, p = index
             # print "Fitting the Regressor for client", c, "product", p
             group = group.groupby('day_group').mean()  #
-            # df['ordered'] in range [0,1] and it's the estimated probability of an order in the daygroup of size
-            # `group_size'
-            # All the values are constant insied a group (excepct the ordered), so taking the mean doens't alterate
-            # the values
+            # df['ordered'] è nel range [0,1] ed è la probabilità stimata che ci sia almeno
+            # un ordine nel day_group
+            # Fissato un day_group tutti i valori del dataframe, eccetto la colonna `ordered` sono
+            # costanti, quindi farne la media non altera il valore.
             group = group.reset_index()
 
             X = group.drop(['ordered'], axis=1).as_matrix()
             y = group['ordered'].as_matrix()
-
-            # print group.head()
 
             self.regressor_matrix[c, p] = linear_model.SGDRegressor()
             self.regressor_matrix[c, p].fit(X, y)
@@ -73,6 +83,14 @@ class SingleRegressorPredictor(object):
         return
 
     def __calculate_order_probability(self, c, p, timestamp):
+        # type: (int, int, long) -> float
+        """
+        Calcola la probabilità che il cliente c ordini il prodotto p nel periodo t
+        :param c: (int) posizione del cliente nella matrice (coincide con l'id)
+        :param p: (int) posizione del prodotot nella matrice (coincide con l'id) 
+        :param t: (long) timestamp dell'ordine
+        :return: probabilità che venga effettuato l'ordine
+        """
         client_data = pd.DataFrame([self.clients.iloc[c]])
         product_data = pd.DataFrame([self.products.iloc[p]])
 
@@ -86,11 +104,13 @@ class SingleRegressorPredictor(object):
         return self.regressor_matrix[c, p].predict(query.as_matrix())
 
     def predict_with_threshold(self, order_timestamp, threshold):
+        # type: (long, float) -> np.ndarray or None
         """
-        Predicts a 1 if the probability predicted value is greater than the given threshold
-        :param order_timestamp:
-        :param threshold:
-        :return:
+        Predice un ordine (1) se il corrispondente peso della matrice weights è maggiore del threshold passato
+        come parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :param threshold: (float) soglia sopra la quale prevedere un 1
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
         if self.regressor_matrix is None:
             return None
@@ -107,10 +127,12 @@ class SingleRegressorPredictor(object):
         return predictions
 
     def predict_with_topn(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        First it calculates the average number of orders in a day and then predicts (approximately) the average number
-        of orders by predicting a 1 only for the top-N raw predicted values
-        :return:
+        Utilizza come threshold per le predizioni un valore tale che vengono predetti tanti ordini quanto è il numero
+        medio di orgini che viene effettuato giornalmente
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
         if self.regressor_matrix is None:
             return None
@@ -123,7 +145,6 @@ class SingleRegressorPredictor(object):
                 probs[c, p] = self.__calculate_order_probability(c, p, order_timestamp)
 
         # copy is needed because reasons... (reshape + sort)
-
         probs_vec = np.reshape(probs.copy(), probs.size)
         probs_vec[::-1].sort()  # in place revese sort
 
@@ -131,10 +152,15 @@ class SingleRegressorPredictor(object):
         return self.predict_with_threshold(order_timestamp, threshold)
 
     def predict_proba(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        Retuns the predicted probabilities in a sklearn-like fashion
-        :param order_timestamp:
-        :return:
+        Ritorna la matrice contenente le probabilità che vengano effettuati degli ordini nel giorno specificato come
+        parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice con le probabilità di effettuare un ordine il giorno specificato dal timestamp.
+                 La matrice è nel formato (numero_coppie, 2) dove `numero_coppie` = numero clienti x numero prodotti.
+                 La prima colonna della matrice contiene la probabilità della classe 0, mentre la seconda colonna
+                 contiene quella della classe 1.
         """
         if self.regressor_matrix is None:
             return None

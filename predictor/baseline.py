@@ -1,112 +1,136 @@
+# -*- coding: utf-8 -*-
 import numpy as np
-import time
 import math
 
-SECS_IN_DAY = 60*60*24
+SECS_IN_DAY = 60 * 60 * 24
 
 
 def scale_fn(t):
+    # type: (int) -> float
     return 1 / t
-    # lt = math.log(t,10)
-    # if lt != 0:
-    #     return 1/lt
-    # return 1
 
 
 class BaselinePredictor(object):
+    """
+    Predittore base che effettua la predizione creando un matrice `c x p` le cui celle contengono il numero medio
+    di ordini effettuati dalla coppia (c,p), scalati in funzione del tempo trascorso.
+    """
+
     def __init__(self, scale_function=scale_fn):
+        # type: (callable) -> None
         self.scale_function = scale_function
-        self.weights = None  # class "1" probability
-        self.avg_ones = None
+        self.matrices = {}  # type: dict - dizionario contenente le matrici degli ordini
+        self.avg_ones = None  # type: float
 
-    def fit(self, matrices):
-        sample = matrices[matrices.keys()[0]]
-        predictions = np.zeros(shape=sample.shape)
-
+    def __calculate_weights(self, timestamp):
+        # type: (long) -> np.ndarray
+        """
+        Calcola la matrice dei pesi scalando ogni peso in base al tempo trascorso
+        :param timestamp: (long) data di riferiemento dell'ordine
+        """
+        sample = self.matrices[self.matrices.keys()[0]]
         clients_count = sample.shape[0]
         products_count = sample.shape[1]
 
-        # matrices since yesterday (t = 1), dict indexed by date
-        # predictions for today (t = 0)
+        weights = np.zeros(shape=(clients_count, products_count))
+
         norm_factor = 0
-        for day in matrices.keys():
-            t = (time.time() - day) % SECS_IN_DAY
+        for day in self.matrices.keys():
+            t = (timestamp - day) % SECS_IN_DAY
             norm_factor += 1 * scale_fn(t)
             for c in range(0, clients_count):
                 for p in range(0, products_count):
-                    predictions[c, p] += matrices[day][c, p] * scale_fn(t)
+                    weights[c, p] += self.matrices[day][c, p] * scale_fn(t)
 
-        # print "Calculated values:"
-        # print predictions
-
-        # normalize the values
+        # Normalizza i valori nell'intervallo [0,1]
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                predictions[c, p] /= norm_factor
+                weights[c, p] /= norm_factor
+        return weights
 
-        self.weights = predictions
-
-        # calculates the average
+    def fit(self, matrices):
+        # type: (dict) -> None
+        """
+        Inizializza il predittore
+        :param matrices: dizionario di matrici degli ordini
+        :return:
+        """
+        self.matrices = matrices
+        # Calcola il numero giornaliero di ordini medio
         ones_cnt = 0
         for day in matrices.keys():
             matrix = matrices[day]
             ones_cnt += matrix.sum()
         avg = float(ones_cnt) / float(len(matrices.keys()))
-        # print 'Float avg', avg
         avg = int(math.ceil(avg))
-        # print 'Ceiled avg', avg
         self.avg_ones = 1 if avg == 0 else avg
         return
 
-    def predict_with_threshold(self, threshold):
+    def predict_with_threshold(self, order_timestamp, threshold):
+        # type: (long, float) -> np.ndarray or None
         """
-        Predicts a 1 if the raw predicted value is greater than the given threshold
-        :param threshold:
-        :return:
+        Predice un ordine (1) se il corrispondente peso della matrice weights è maggiore del threshold passato
+        come parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :param threshold: (float) soglia sopra la quale prevedere un 1
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
-        if self.weights is None:
+        if len(self.matrices.keys()) <= 0:
             return None
-        predictions = self.weights.copy()
-        clients_count = predictions.shape[0]
-        products_count = predictions.shape[1]
+        clients_count = self.matrices[self.matrices.keys()[0]].shape[0]
+        products_count = self.matrices[self.matrices.keys()[0]].shape[1]
+        predictions = np.zeros(shape=(clients_count, products_count))
 
-        # check threshold
+        weights = self.__calculate_weights(order_timestamp)
+
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                predictions[c, p] = 1 if predictions[c, p] >= threshold else 0
+                predictions[c, p] = 1 if weights[c, p] >= threshold else 0
 
         return predictions
 
-    def predict_with_topn(self):
+    def predict_with_topn(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
         """
-        First it calculates the average number of orders in a day and then predicts (approximately) the average number
-        of orders by predicting a 1 only for the top-N raw predicted values
-        :return:
+        Utilizza come threshold per le predizioni un valore tale che vengono predetti tanti ordini quanto è il numero
+        medio di orgini che viene effettuato giornalmente
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice degli ordini relativa al timestamp
         """
-        if self.weights is None:
+        if len(self.matrices.keys()) <= 0:
             return None
-        clients_count = self.weights.shape[0]
-        products_count = self.weights.shape[1]
 
-        # copy is needed because reasons... (reshape + sort)
-        predictions_vector = np.reshape(self.weights.copy(), self.weights.size)
-        predictions_vector[::-1].sort()  # in place revese sort
+        clients_count = self.matrices[self.matrices.keys()[0]].shape[0]
+        products_count = self.matrices[self.matrices.keys()[0]].shape[1]
+        predictions = np.zeros(shape=(clients_count, products_count))
+
+        weights = self.__calculate_weights(order_timestamp)
+
+        # Serve la copia perché numpy sfasa un po' di cose... (reshape + sort)
+        predictions_vector = np.reshape(weights.copy(), weights.size)
+        predictions_vector[::-1].sort()  # Magicamente fa l'inplace reverse-sort
 
         threshold = predictions_vector[self.avg_ones - 1]
-        predictions = self.weights.copy()
-        print 'Threshold', threshold
-        # check threshold
-        for c in range(0, clients_count):
-            for p in range(0, products_count):
-                predictions[c, p] = 1 if predictions[c, p] >= threshold else 0
 
-        return predictions
+        return self.predict_with_threshold(order_timestamp, threshold)
 
-    def predict_proba(self):
-        if self.weights is None:
+    def predict_proba(self, order_timestamp):
+        # type: (long) -> np.ndarray or None
+        """
+        Ritorna la matrice contenente le probabilità che vengano effettuati degli ordini nel giorno specificato come
+        parametro
+        :param order_timestamp: (long) timestamp della data dell'ordine
+        :return: (np.ndarray) matrice con le probabilità di effettuare un ordine il giorno specificato dal timestamp.
+                 La matrice è nel formato (numero_coppie, 2) dove `numero_coppie` = numero clienti x numero prodotti.
+                 La prima colonna della matrice contiene la probabilità della classe 0, mentre la seconda colonna
+                 contiene quella della classe 1.
+        """
+        if len(self.matrices.keys()) <= 0:
             return None
-        vectorized_weights = np.reshape(self.weights, (1, self.weights.size)) # (1x Nweights)
-        result = np.ones(shape=(self.weights.size, 2))
+        weights = self.__calculate_weights(order_timestamp)
+
+        vectorized_weights = np.reshape(weights, (1, weights.size))  # (1x N_weights)
+        result = np.ones(shape=(weights.size, 2))
         result[:, 0] = result[:, 0] - vectorized_weights
         result[:, 1] = vectorized_weights
         return result

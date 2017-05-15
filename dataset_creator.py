@@ -3,8 +3,8 @@
 import getopt
 import sys
 import time
-
 import datetime
+import pandas as pd
 
 from generator.probability_models import ProbabilityModel
 from util.file_helper import ConfigurationFile, save_train_set, save_test_set, load_train_set, \
@@ -58,22 +58,22 @@ def main(argv):
     print prefix
 
     if is_setup:
-        # doesn't generate the orders
+        # Nella modalità `setup` non vengono generati gli ordini
         clients, products, _, model = generate_dataset(clients_count=config.clients_count,
                                                        products_count=config.products_count,
-                                                       days_count=0,
+                                                       days_count=0,  # non genera gli ordini
                                                        day_interval=0,
                                                        model_name=config.model_name)
         save_train_set(clients, products, {}, model, config.base_prefix, prefix)
     elif is_partial:
-        # load the data, select only the right part and generates the orders
+        # Nella modalità `partial` vengono caricati i dati (tranne gli ordini) e vengono generati
+        # gli ordini relativi solamente alla parte di clienti specificata.
         clients, products, _, model = load_train_set(config.base_prefix, prefix)
 
         part_from = config.part_size * part
         part_to = config.part_size * (part+1)
-
-        # restrict the clients set and reset the index so it goes from 0 to len-1
-        # the old index is save in a new column 'index'
+        # Restringe il dataset dei clienti e reimposta l'indice in modo che vada da 0 a len-1
+        # il vecchio indice viene mantenuto nella nuova colonna `index`
         clients = clients.iloc[part_from: part_to, :].reset_index()
 
         days = generate_days(config.days_count, config.day_interval)
@@ -84,11 +84,11 @@ def main(argv):
         save_train_set(clients, products, orders, model, config.base_prefix, prefix)
         generate_test_set(clients, products, model, config, prefix)
     elif is_recombine:
-        # recombines the partial orders in a single file
-        # loads the clients and the products
-        _, _, _, model = load_train_set(config.base_prefix, prefix)
+        # Nella modalità `recombine` vengono uniti i vari dataset parziali in un unico file
+
         total_parts = config.clients_count / config.part_size
         partial_prefixes = ['part%d_%s' % (i, prefix) for i in range(0, total_parts)]
+
         # merge the partials and generates the complete file
         merge_partial_orders(config.base_prefix+'/'+D_TRAIN, partial_prefixes, prefix)
 
@@ -96,6 +96,7 @@ def main(argv):
             base_prefix = config.base_prefix+'/'+D_TEST+'/'+D_VERSION+str(i)
             merge_partial_orders(base_prefix, partial_prefixes, prefix)
     else:
+        # Nessun caricamento, il dataset viene generato live.
         clients, products, orders, model = generate_dataset(clients_count=config.clients_count,
                                                             products_count=config.products_count,
                                                             days_count=config.days_count,
@@ -108,8 +109,8 @@ def main(argv):
 def generate_test_set(clients, products, model, config, prefix):
     # type: (pd.DataFrame, pd.DataFrame, ProbabilityModel, ConfigurationFile, str) -> None
     """
-    Generates 5 possibile test set for the data, each one composed by two matrix, one for the todays orders
-    and one for the the day after tomorrow orders.
+    Genera 5 possibili test set per i dati. Ogni dataset è composto da 2 matrici, una relativa
+     agli ordini per oggi e una relativi a quelli per dopo domani.
     """
     print "Generating test set..."
     today_timestamp = time.time()  # current timestamp

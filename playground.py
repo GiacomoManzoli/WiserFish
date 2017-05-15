@@ -1,13 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import csv
 import getopt, sys
 import time
 
 import datetime
 import numpy as np
-from sklearn import tree, svm, ensemble
-from sklearn.naive_bayes import BernoulliNB
 from sklearn.metrics import roc_auc_score
 
 from predictor.baseline import BaselinePredictor
@@ -99,11 +96,12 @@ def main(argv):
             # X_test_prop -> test data set (not needed for BasePredictor)
             predictions = None
             predictions_probabilities = None
+
+            ts = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+
             if len(X_base.keys()) > 0:
-                    clf.fit(clients, products, orders, X_base)
-                    ts = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+                    clf.fit(clients, products, orders)
                     predictions = clf.predict_with_topn(ts)
-                    predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix
                     predictions_probabilities = clf.predict_proba(ts)
 
             if predictions is not None:

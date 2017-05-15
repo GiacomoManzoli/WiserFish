@@ -105,6 +105,7 @@ def main(argv):
     ############################
     # Test set generation
     ############################
+    print "Query generation..."
     matrix_shape = (clients.shape[0], products.shape[0]) # get the matrix dimension
     days = test_orders.keys()  # <- days[0] = today, days[1] = today+2
     queries = []
@@ -135,27 +136,21 @@ def main(argv):
     ############################
     # Predictions
     ############################
-    base_predictor = BaselinePredictor()
-    sinful = SinfulBaselinePredictor()
-    less = LessSinfulBaselinePredictor()
-    tree5 = tree.DecisionTreeClassifier(max_depth=5)
     treeN = tree.DecisionTreeClassifier()
     tree10 = tree.DecisionTreeClassifier(max_depth=10)
     bern = BernoulliNB()
     forest = ensemble.RandomForestClassifier()
 
     clfs = [
-        #("base", base_predictor),
-        #("sinful", sinful),
-        #("less", less),
-        #("tree_5", tree5),
+        ("base", BaselinePredictor()),
+        ("sinful", SinfulBaselinePredictor()),
+        ("less", LessSinfulBaselinePredictor()),
+        ("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
         #("tree_10", tree10),
         #("tree_N", treeN),
         #("bern", bern),
         #("forest", forest),
-        ("single_1", SingleRegressorPredictor(group_size=1)),
-        ("single_3", SingleRegressorPredictor(group_size=3)),
-        ("single_5", SingleRegressorPredictor(group_size=5))
+        ("single_1", SingleRegressorPredictor(group_size=1))
     ]
 
     with open("%s/%s.csv" % (OUT_DIR_NAME, run_name), 'wb') as output:
@@ -169,32 +164,31 @@ def main(argv):
             for pair in clfs:
                 name, clf = pair
                 print "--- Classifier:", name, "---"
-                # X or X_base -> train data set
+                # X or X_base (or orders) -> train data set
                 # X_test_prop -> test data set (not needed for BasePredictor)
                 predictions = None
                 predictions_probabilities = None
+
+                t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
+
                 if len(X_base.keys()) > 0:
                     if name == "base":
-                        clf.fit(X_base)  # BaselinePredictor works in a different way then a sklearn classifier
-                        predictions = clf.predict_with_topn()  # returns a NClients x NProducts matrix
-                        predictions_probabilities = clf.predict_proba()  # retruns a matrix like a SKLearn classifier
+                        clf.fit(orders)  # BaselinePredictor works in a different way then a sklearn classifier
+                        predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
+                        predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
                     elif name == "less":
-                        t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
-                        clf.fit(X_base)
+                        clf.fit(orders)
                         predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
                     elif name == "sinful":
-                        t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
-                        clf.fit(clients, products, X_base)
+                        clf.fit(clients, products, orders)
                         predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
                     elif name == "single_1" or name == "single_3" or name == "single_5" or name == "single":
-                        clf.fit(clients, products, orders, X_base)
-                        ts = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
-                        predictions = clf.predict_with_topn(ts)
+                        clf.fit(clients, products, orders)
+                        predictions = clf.predict_with_topn(t)
                         predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix
-                        predictions_probabilities = clf.predict_proba(ts)
-
+                        predictions_probabilities = clf.predict_proba(t)
                     else:
                         clf.fit(X, y)
                         predictions = clf.predict(X_test_prop)

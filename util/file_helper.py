@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import csv
 import json
 
@@ -7,6 +8,8 @@ import pickle
 import os
 
 # Nomi delle directory
+from generator.probability_models import ProbabilityModel
+
 D_OUTPUTS = "data"
 D_TRAIN = "train_set"
 D_TEST = "test_set"
@@ -14,6 +17,13 @@ D_VERSION = "version_"
 
 
 def __output_dir(prefix, make_dirs=True):
+    # type: (str, bool) -> (str, str, str)
+    """
+    Crea le cartelle in cui andare a salvare i vari file
+    :param prefix: 
+    :param make_dirs: 
+    :return: tupla contenente i filepath creati
+    """
     experiment_path = "./%s/%s/" % (D_OUTPUTS, prefix)
     experiment_path_train = "%s%s/" % (experiment_path, D_TRAIN)
     experiment_path_test = "%s%s/" % (experiment_path, D_TEST)
@@ -32,9 +42,15 @@ def __output_dir(prefix, make_dirs=True):
 ################################################################
 
 def __save_orders(orders, clients, products, filename):
-    # orders -> dictionary, keys:Datetime, values:np.ndarray
-    # saves only the orders
-
+    # type: (dict, pd.DataFrame, pd.DataFrame, str) -> None
+    """
+    Salva gli ordini su file. Vengono salvati solo gli ordini effettuati (gli 1 della matrice) con
+    il timestamp e gli id dei relativi clienti/prodotti
+    :param orders: dizionario di matrici con gli ordini
+    :param clients: dataframe con i clienti
+    :param products: dataframe con i prodotti
+    :param filename: nome del file
+    """
     orders_rows = []
     for key in orders.keys():
         matrix = orders[key]
@@ -63,11 +79,12 @@ def __save_orders(orders, clients, products, filename):
 
 
 def __load_orders(filename, matrix_shape):
+    # type: (str, (int, int)) -> dict
     """
-    Loads the orders from the csv file in the dict-of-matrix form
-    :param filename:
-    :param matrix_shape:
-    :return:
+    Carica gli ordini dal file e li ritorna nel formato `dizionario di matrici`
+    :param filename: percorso del file da caricare
+    :param matrix_shape: coppia rappresentante le dimensioni della matrice
+    :return: ordini in formato dizionario di matrici
     """
     try:
         orders = pd.read_csv(filename)
@@ -90,8 +107,17 @@ def __load_orders(filename, matrix_shape):
 
 def save_train_set(clients, products, orders, model, name='', prefix=''):
     # type: (pd.DataFrame, pd.DataFrame, dict, str, str) -> None
-    """Saves the pandas DataFrame and the orders dict as csv files inside the 'data' directory"""
-
+    """
+    Salva i dataframe dei clienti, dei prodotti e le matrici degli ordini in vari file CSV dentro
+    la directory `data`.
+    VERSIONE TRAIN
+    :param clients: dataframe dei clienti
+    :param products: dataframe dei prodotti
+    :param orders: dizionario di matrici con gli ordini
+    :param model: modello di probabilità utilizzato per generare il dataset
+    :param name: nome del dataset
+    :param prefix: prefisso da utilizzare
+    """
     if name == '':
         name = prefix
     base_path, train_set_path, _ = __output_dir(name)
@@ -111,8 +137,13 @@ def save_train_set(clients, products, orders, model, name='', prefix=''):
 
 
 def load_train_set(name='', prefix=''):
-    """Loads the clients and products DataFrames and the orders dictionary from the 'data' directory (TRAIN set)"""
-
+    # type: (str, str) -> (pd.DataFrame, pd.DataFrame, dict, ProbabilityModel)
+    """
+    Carica il dataset per il training
+    :param name: nome del dataset
+    :param prefix: prefisso
+    :return: il dataset sotto forma di dataframe e di dizionario di matrici
+    """
     if name == '':
         name = prefix
     base_path, train_set_path, _ = __output_dir(name)
@@ -138,6 +169,19 @@ def load_train_set(name='', prefix=''):
 ################################################################
 
 def save_test_set(clients, products, orders, name='', prefix='', version=None):
+    # type: (pd.DataFrame, pd.DataFrame, dict, str, str, int) -> None
+    """
+    Salva i dataframe dei clienti, dei prodotti e le matrici degli ordini in vari file CSV dentro
+    la directory `data`.
+    VERSIONE TEST: non vengono salvati i clienti/prodotti/modello
+    :param clients: dataframe dei clienti
+    :param products: dataframe dei prodotti
+    :param orders: dizionario di matrici con gli ordini
+    :param model: modello di probabilità utilizzato per generare il dataset
+    :param name: nome del dataset
+    :param prefix: prefisso dei file
+    :param version: versione del dataset (possono essere state generate più matrici per lo stesso giorno)
+    """
     if name == '':
         name = prefix
     _, _, test_set_path = __output_dir(name)
@@ -156,8 +200,14 @@ def save_test_set(clients, products, orders, name='', prefix='', version=None):
 
 
 def load_test_set(name='', prefix='', version=None):
-    """Loads the clients and products DataFrames and the orders dictionary from the 'data' directory (TEST set)"""
-
+    # type: (str, str, int) -> (pd.DataFrame, pd.DataFrame, dict, ProbabilityModel)
+    """
+    Carica il dataset per il test
+    :param name: nome del dataset
+    :param prefix: prefisso
+    :param version: versione del dataset da caricare
+    :return: il dataset sotto forma di dataframe e di dizionario di matrici
+    """
     if name == '':
         name = prefix
     base_path, _, test_set_path = __output_dir(name)
@@ -188,8 +238,8 @@ def load_test_set(name='', prefix='', version=None):
 def merge_partial_orders(name, prefixes, result_prefix):
     # type: (str, [str], str) -> None
     """
-    Loads the several partial files defined in prefixes, merges all the associated
-    dataframe into one and then saves it on file.
+    Carica da vari CSV contenenti le parti di un dataset e crea la versione completa.
+    Il risultato viene salvato su file.
     :param name:
     :param prefixes:
     :param result_prefix:

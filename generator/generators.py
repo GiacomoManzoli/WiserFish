@@ -1,5 +1,5 @@
+# -*- coding: utf-8 -*-
 import datetime
-import math
 import random
 import time
 
@@ -7,15 +7,18 @@ from sklearn.datasets import make_classification
 import pandas as pd
 import numpy as np
 
-from generator.probability_models import RandomProbabilityModel, SimpleProbabilityModel, CondProbabilityModel
+from generator.probability_models import RandomProbabilityModel, SimpleProbabilityModel, CondProbabilityModel, \
+    ProbabilityModel
 
 SECS_IN_DAY = 60*60*24
 
 
 def generate_probabilites(y):
     # type: (np.array) -> np.array
-    """Generate an array of probability value, one for each istance y.
-    The value is influenced by the class of the istance"""
+    """
+    Crea un array di valori di probabilità associato ad ognuno dei valori presenti nell'array `y`.
+    Il range nel quale viene generato ogni singolo valori dipende dal corrispettivo valore di `y`. 
+    """
     class_cnt = np.bincount(y).size
     prob_interval = 1 / float(class_cnt)
     probs = np.array(y, dtype=np.float)
@@ -28,8 +31,10 @@ def generate_probabilites(y):
 
 def generate_freq_scales(y):
     # type: (np.array) -> np.array
-    """Generate an array of frequency scale value, one for each istance y.
-    The value is influenced by the class of the istance"""
+    """
+    Genere un arrau di scale di freuqenza, una per ogni istanza di `y`.
+    Il valore generato è influenzato dalla classe dell'istanza.
+    """
     scales = np.array(y, dtype=np.float)
 
     for i in range(0, y.size):
@@ -54,30 +59,34 @@ def generate_freq_scales(y):
 
 def generate_clients(cnt):
     # type: (int) -> pd.DataFrame
-
+    """
+    Genera i clienti
+    :param cnt: numero di clienti da generare
+    :return: dataframe contenente i clienti generati
+    """
     features = 10
     (X, y) = make_classification(n_samples=cnt, n_features=features, n_informative=4, n_repeated=2, n_classes=4,
                                  random_state=123)
-    # X[i] array representing the i-th client, y[i] client's class (4 possible classes)
+    # X[i] array rappresentante l'i-esimo cliento, y[i] è la classe del cliente (4 possibili valori)
 
-    # 4 different classes of order probabilities for the clients (used to determine `pc`)
+    # 4 diverse classi per la probabilità di effettuare un ordine per il cliente (determina pc)
     clients_order_probs = [random.randint(0, 3) for _ in range(0, cnt)]
-    # 4 different classses of order frequency for the clients (used to determine `client_freq`)
+    # 4 diverse classi per la frequenza d'ordine (determina `client_freq`)
     clients_order_freqs = [random.randint(0, 3) for _ in range(0, cnt)]
 
-    # vector with clients' ids
+    # vettore degli id
     ids = [i for i in range(0, cnt)]
-    # vector with clients' names
+    # vettore con i nomi
     names = ["client_" + str(i) for i in range(0, cnt)]
 
-    # vector with order probabilities
+    # probabilità di effettuare un ordine
     pc = generate_probabilites(np.array(clients_order_probs))
-    # vector with order frequence scales
+    # frequenza degli ordini
     freq_scale = generate_freq_scales(np.array(clients_order_freqs))
 
-    # build the dataframe
+    # creazione del dataframe
     merged = np.c_[ids, pc, freq_scale, X, y]
-    clients = pd.DataFrame(names, columns=["client_name"]) # the names can't be put inside `merged`
+    clients = pd.DataFrame(names, columns=["client_name"])  # non posso aggiungere subito i nomi
 
     col_names = ["clientId", "pc", "client_freq_scale"] + ["client_feature_" + str(i) for i in range(0, features)] + ["class"]
     clients_data = pd.DataFrame(merged, columns=col_names)
@@ -95,28 +104,30 @@ def generate_clients(cnt):
 
 def generate_products(cnt):
     # type: (int) -> pd.DataFrame
-
+    """
+    Genera i prodotti
+    :param cnt: numero di prodotti da generare
+    :return: dataframe contenente i prodotti 
+    """
     features = 15
     (X, y) = make_classification(n_samples=cnt, n_features=features, n_informative=4, n_repeated=2, n_classes=4,
                                  random_state=456)
-    # X[i] array representing the i-th product, y[i] product's class (4 possible classes)
+    # X[i] array rappresentate l'i-esimo prodotto, y[i] è la classe del prodotto (4 possibili)
 
-    # 4 different classes of order probabilities for the clients (used to determine `pc`)
+    # 4 diverse classi per la probabilità del prodotto di essere ordinato (determina pp)
     products_order_probs = [random.randint(0, 3) for _ in range(0, cnt)]
-    # 4 different classses of order frequency for the clients (used to determine `client_freq`)
+    # 4 diverse classi per la frequenza d'ordine (determina `product_freq`)
     products_order_freqs = [random.randint(0, 3) for _ in range(0, cnt)]
 
-    # vector with products' ids
     ids = [i for i in range(0, cnt)]
-    # vector with products' names
     names = ["prod_" + str(i) for i in range(0, cnt)]
 
-    # vector with order probabilities
+    # vettore con le probabilità di essere ordinato
     pp = generate_probabilites(np.array(products_order_probs))
-    # vector with order frequece scales
+    # vettore con le frequenze
     freq_scale = generate_freq_scales(np.array(products_order_freqs))
 
-    # build the dataframe
+    # crea il dataframe
     merged = np.c_[ids, pp, freq_scale, X, y]
     products = pd.DataFrame(names, columns=["product_name"])
 
@@ -125,11 +136,9 @@ def generate_products(cnt):
 
     products = products.join(products_data)
 
-    # Sets correct datatype
-    #print products.head()
+    # Imposta i tipi corretti
     products['productId'] = products['productId'].astype(dtype=int)
     products['class'] = products['class'].astype(dtype=int)
-    #print products.head()
     return products
 
 
@@ -137,26 +146,36 @@ def generate_products(cnt):
 # ORDER DATA
 ###########################
 
-def generate_matrix(clients, products, t, model):  # t --> timestamp
+def generate_matrix(clients, products, timestamp, model):
+    # type: (pd.DataFrame, pd.DataFrame, long, ProbabilityModel) -> np.ndarray
+    """
+    Genera la matrice degli ordini relativa al timestamp
+    :param clients: dataframe con i clienti
+    :param products: dataframe con i prodotti
+    :param timestamp: timestamp della data a cui sono associati gli ordini
+    :param model: modello di probabilità da utilizzare
+    :return: matrice degli ordini
+    """
     clients_count = clients.shape[0]
     products_count = products.shape[0]
     matrix = np.ndarray(shape=(clients_count, products_count))
 
     for c in range(0, clients_count):
         for p in range(0, products_count):
-            # model.probabi
-            # client_copy = clients.ix[c].copy()
-            # client_copy['clientId'] = c
-            # product_copy = products.ix[p].copy()
-            # product_copy['productId'] = p
-            # matrix[c, p] = model.probability(client_copy, product_copy, t)
-            matrix[c, p] = model.will_make_order(clients.ix[c], products.ix[p], t)
+            matrix[c, p] = model.will_make_order(clients.ix[c], products.ix[p], timestamp)
     return matrix
 
 
 def generate_orders(clients, products, days, model):
-    # days : list of timestamp of the orders matrices that must be generated
-    # returns the matrices of with the orders
+    # type: (pd.DataFrame, pd.DataFrame, [long], ProbabilityModel) -> dict
+    """
+    Genera il dizionario di matrici degli ordini per le matrici specificate come parametro
+    :param clients: dataframe con i clienti
+    :param products: dataframe con i prodotti
+    :param days: timestamp dei giorni
+    :param model: modello di probabilità da utilizzare
+    :return: dizionario con le matrici degli ordini
+    """
     print "Generating orders:"
     print "- # Clients:", clients.shape
     print "- # Products:", products.shape
@@ -175,18 +194,26 @@ def generate_orders(clients, products, days, model):
 ###########################
 
 def generate_days(days_count, day_interval=0):
-    return [time.time() - SECS_IN_DAY * i * (day_interval + 1) for i in range(1, days_count+1)]  # starts from yesterday
+    # type: (int, int) -> [long]
+    """
+    Genera i timestamp per i giorni a partire da ieri (rispetto la data corrente) a ritroso.
+    :param days_count: numero di timestamp da generare
+    :param day_interval: giorni di stacco tra i timestamp generati (0 -> contigui)
+    :return: lista con i timestamp generati
+    """
+    return [time.time() - SECS_IN_DAY * i * (day_interval + 1) for i in range(1, days_count+1)]
 
 
 def generate_dataset(clients_count, products_count, days_count, day_interval=0, model_name='random'):
+    # type: (int, int, int, int, str) -> (pd.DataFrame, pd.DataFrame, dict, ProbabilityModel)
     """
-
-    :param clients_count: number of clients
-    :param products_count: number of products
-    :param days_count: number of days (matrices)
-    :param day_interval: interval between each day (default=0, continuos matrices)
-    :param model_name: probability model name {'random','simple', 'cond'}
-    :return: clients, products, orders
+    Genera un dataset per il problema
+    :param clients_count: numero di clienti
+    :param products_count: numero di prodotti
+    :param days_count: nummero di giorni (matrici)
+    :param day_interval: salto tra i giorni (default=0, tutti di fila)
+    :param model_name: nome del modello di probabilità {'random','simple', 'cond'}
+    :return: dataset
     """
     print "Generating clients..."
     clients = generate_clients(clients_count)
@@ -215,6 +242,11 @@ def generate_dataset(clients_count, products_count, days_count, day_interval=0, 
 ###########################
 
 def __check_generated_days(days):
+    # type: ([long]) -> None
+    """
+    DEBUG: stampa i giorni generati
+    :param days: timestamp generati
+    """
     today_ts = time.time()
     str_time = '%Y-%m-%d'
 
