@@ -13,6 +13,7 @@ from sklearn.metrics import roc_auc_score
 from predictor.baseline import BaselinePredictor
 from predictor.less_sinful_baseline import LessSinfulBaselinePredictor
 from predictor.metrics import calculate_metrics
+from predictor.multi_regressor_predictor import MultiRegressorPredictor
 from predictor.proposizionalizer import proposizionalize
 from generator.generators import generate_dataset, generate_orders
 from predictor.sinful_baseline import SinfulBaselinePredictor
@@ -142,15 +143,18 @@ def main(argv):
     forest = ensemble.RandomForestClassifier()
 
     clfs = [
-        ("base", BaselinePredictor()),
-        ("sinful", SinfulBaselinePredictor()),
-        ("less", LessSinfulBaselinePredictor()),
-        ("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
+        #("base", BaselinePredictor()),
+        #("sinful", SinfulBaselinePredictor()),
+        #("less", LessSinfulBaselinePredictor()),
+        #("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
         #("tree_10", tree10),
         #("tree_N", treeN),
         #("bern", bern),
         #("forest", forest),
-        ("single_1", SingleRegressorPredictor(group_size=1))
+        ("multi_pc_pp", MultiRegressorPredictor(components=['p_c', 'p_p'])),
+        ("multi_pc_pp_pt", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t'])),
+        ("multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t', 'p_cp'])),
+        ("multi_pt_p_cp", MultiRegressorPredictor(components=['p_t','p_cp']))
     ]
 
     with open("%s/%s.csv" % (OUT_DIR_NAME, run_name), 'wb') as output:
@@ -185,6 +189,11 @@ def main(argv):
                         predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
                     elif name == "single_1" or name == "single_3" or name == "single_5" or name == "single":
+                        clf.fit(clients, products, orders)
+                        predictions = clf.predict_with_topn(t)
+                        predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix
+                        predictions_probabilities = clf.predict_proba(t)
+                    elif name == "multi_pc_pp" or name == "multi_pc_pp_pt" or name == "multi_pc_pp_pt_p_cp" or name == "multi_pt_p_cp":
                         clf.fit(clients, products, orders)
                         predictions = clf.predict_with_topn(t)
                         predictions = predictions.reshape(y_test.shape)  # reshape as a NClients x NProducts matrix

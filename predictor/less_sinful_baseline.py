@@ -8,7 +8,7 @@ from generator.probability_models import ProbabilityModel
 
 class LessSinfulBaselinePredictor(object):
     """
-    Predicttore che usa la stessa sinusoide del modello di probabilità che modella l'andamento periodico degli ordini.
+    Predittore che usa la stessa sinusoide del modello di probabilità che modella l'andamento periodico degli ordini.
     (per questo è stato chiamato less-sinful)
     P_p, P_c e P_cp sono approssimate prendendo il valore medio del train set
     """

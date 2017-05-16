@@ -8,6 +8,7 @@ from predictor.proposizionalizer import proposizionalize
 
 SECS_IN_DAY = int(60 * 60 * 24)
 
+# TODO SISTEMARE QUESTO SCHIFO DI CODICE
 
 class SingleRegressorPredictor(object):
     """
@@ -87,7 +88,7 @@ class SingleRegressorPredictor(object):
         """
         Calcola la probabilità che il cliente c ordini il prodotto p nel periodo t
         :param c: (int) posizione del cliente nella matrice (coincide con l'id)
-        :param p: (int) posizione del prodotot nella matrice (coincide con l'id) 
+        :param p: (int) posizione del prodotto nella matrice (coincide con l'id) 
         :param t: (long) timestamp dell'ordine
         :return: probabilità che venga effettuato l'ordine
         """

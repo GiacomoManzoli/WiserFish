@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score
 from predictor.baseline import BaselinePredictor
 from predictor.less_sinful_baseline import LessSinfulBaselinePredictor
 from predictor.metrics import calculate_metrics
+from predictor.multi_regressor_predictor import MultiRegressorPredictor
 from predictor.proposizionalizer import proposizionalize
 from generator.generators import generate_dataset, generate_orders
 from predictor.sinful_baseline import SinfulBaselinePredictor
@@ -79,7 +80,7 @@ def main(argv):
     ############################
     # Predictions
     ############################
-    single = SingleRegressorPredictor()
+    single = MultiRegressorPredictor()
 
     clfs = [
         ("single", single)

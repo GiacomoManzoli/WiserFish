@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 
 from generator.probability_models import RandomProbabilityModel, SimpleProbabilityModel, CondProbabilityModel, \
-    ProbabilityModel
+    ProbabilityModel, NoisyProbabilityModel
 
 SECS_IN_DAY = 60*60*24
 
@@ -228,6 +228,8 @@ def generate_dataset(clients_count, products_count, days_count, day_interval=0, 
         model = SimpleProbabilityModel()
     elif model_name == 'cond':
         model = CondProbabilityModel(clients, products)
+    elif model_name == 'noisy':
+        model = NoisyProbabilityModel(clients, products)
 
     if days_count != 0:
         orders = generate_orders(clients, products, days, model)

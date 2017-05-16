@@ -8,8 +8,6 @@ import pickle
 import os
 
 # Nomi delle directory
-from generator.probability_models import ProbabilityModel
-
 D_OUTPUTS = "data"
 D_TRAIN = "train_set"
 D_TEST = "test_set"
