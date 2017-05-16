@@ -8,7 +8,7 @@ from sklearn.svm import SVR
 
 from predictor.proposizionalizer import proposizionalize
 
-
+SECS_IN_DAY = 60*60*24
 # TODO SISTEMARE QUESTO SCHIFO DI CODICE
 
 class SingleRegressorPredictor(object):

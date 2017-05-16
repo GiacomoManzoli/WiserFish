@@ -143,18 +143,21 @@ def main(argv):
     forest = ensemble.RandomForestClassifier()
 
     clfs = [
-        #("base", BaselinePredictor()),
-        #("sinful", SinfulBaselinePredictor()),
-        #("less", LessSinfulBaselinePredictor()),
-        #("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
-        #("tree_10", tree10),
-        #("tree_N", treeN),
-        #("bern", bern),
-        #("forest", forest),
-        ("multi_pc_pp", MultiRegressorPredictor(components=['p_c', 'p_p'])),
-        ("multi_pc_pp_pt", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t'])),
-        ("multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t', 'p_cp'])),
-        ("multi_pt_p_cp", MultiRegressorPredictor(components=['p_t','p_cp']))
+        ("base", BaselinePredictor()),
+        ("sinful", SinfulBaselinePredictor()),
+        ("less", LessSinfulBaselinePredictor()),
+        ("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
+        ("tree_10", tree10),
+        ("tree_N", treeN),
+        ("bern", bern),
+        ("forest", forest),
+        #("multi_pc_pp", MultiRegressorPredictor(components=['p_c', 'p_p'])),
+        #("multi_pc_pp_pt", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t'])),
+        #("multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t', 'p_cp'])),
+        #("multi_pt_p_cp", MultiRegressorPredictor(components=['p_t','p_cp']))
+        ('single_1', SingleRegressorPredictor(regressor_name='SVR', group_size=1)),
+        ('single_3', SingleRegressorPredictor(regressor_name='SVR', group_size=3)),
+        ('single_5', SingleRegressorPredictor(regressor_name='SVR', group_size=5))
     ]
 
     with open("%s/%s.csv" % (OUT_DIR_NAME, run_name), 'wb') as output:
