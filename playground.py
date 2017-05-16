@@ -20,8 +20,8 @@ from util import ConfigurationFile, os, load_train_set, load_test_set
 
 def main(argv):
     clients, products, orders, model = generate_dataset(clients_count=10,
-                                                        products_count=100,
-                                                        days_count=50,
+                                                        products_count=10,
+                                                        days_count=10,
                                                         day_interval=0,
                                                         model_name='cond')
     print "Generation of the test set for today and after tomorrow..."
@@ -80,7 +80,7 @@ def main(argv):
     ############################
     # Predictions
     ############################
-    single = MultiRegressorPredictor()
+    single = MultiRegressorPredictor(components=['p_p', 'p_c', 'p_cp', 'p_t'])
 
     clfs = [
         ("single", single)
@@ -101,9 +101,10 @@ def main(argv):
             ts = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
 
             if len(X_base.keys()) > 0:
-                    clf.fit(clients, products, orders)
-                    predictions = clf.predict_with_topn(ts)
-                    predictions_probabilities = clf.predict_proba(ts)
+                clf.fit(clients, products, orders)
+                predictions = clf.predict_with_topn(ts)
+                predictions_probabilities = clf.predict_proba(ts)
+                print predictions
 
             if predictions is not None:
                 # print predictions

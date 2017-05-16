@@ -4,9 +4,10 @@ from sklearn import linear_model
 import numpy as np
 import math
 
+from sklearn.svm import SVR
+
 from predictor.proposizionalizer import proposizionalize
 
-SECS_IN_DAY = int(60 * 60 * 24)
 
 # TODO SISTEMARE QUESTO SCHIFO DI CODICE
 
@@ -17,8 +18,9 @@ class SingleRegressorPredictor(object):
     I regressori possono essere addestrati sui dati giornalieri oppure aggregando i giorni.
     """
 
-    def __init__(self, group_size=5):
-        # type: (int) -> None
+    def __init__(self, group_size=5, regressor_name='SGD'):
+        # type: (int, str) -> None
+        self.regressor_name = regressor_name
         self.avg_ones = None
         self.group_size = group_size
         self.regressor_matrix = None
@@ -71,7 +73,13 @@ class SingleRegressorPredictor(object):
             X = group.drop(['ordered'], axis=1).as_matrix()
             y = group['ordered'].as_matrix()
 
-            self.regressor_matrix[c, p] = linear_model.SGDRegressor()
+            clf = None
+            if self.regressor_name == 'SGD':
+                clf = linear_model.SGDRegressor()
+            elif self.regressor_name == 'SVR':
+                clf = SVR()
+
+            self.regressor_matrix[c, p] = clf
             self.regressor_matrix[c, p].fit(X, y)
 
         ones_cnt = 0  # counts the total number of orders
