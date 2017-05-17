@@ -1,8 +1,8 @@
 {
-  "prefix": "reallysmall",
+  "prefix": "notsosmall",
   "clients_count": 10,
-  "products_count": 10,
-  "days_count": 5,
+  "products_count": 100,
+  "days_count": 50,
   "day_interval": 0,
   "model_name": "noisy",
   "part_size": 5

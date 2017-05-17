@@ -38,17 +38,24 @@ class LessSinfulBaselinePredictor(object):
         ones_cnt = 0
         days_count = len(matrices.keys())
         for day in matrices.keys():
-            ones_cnt += matrices[day].sum()
+            matrix = matrices[day]
+            ones_cnt += matrix.sum()
+            # Media delle righe e delle celle
             for c in range(0, clients_count):
+                row_avg = matrix[c, :].sum() / products_count  # numero medio di ordini effetuati dal cliente
+                self.pc_estimation[c] += row_avg / days_count  # lo aggiungo alla media, dividendo già per il totale
                 for p in range(0, products_count):
-                    self.pcp_estimation[c, p] += matrices[day][c, p] / days_count
-                    self.pp_estimation[p] += matrices[day][c, p] / days_count
-                    self.pc_estimation[c] += matrices[day][c, p] / days_count
-        # estimations[c, p] = # di volte che il cliente c ha effettuato un ordine
+                    self.pcp_estimation[c, p] += matrix[c, p] / days_count
+            # Media delle colonne
+            for p in range(0, products_count):
+                col_avg = matrix[:, p].sum() / clients_count  # numero medio di volte che il prodotto è stato ordinato
+                self.pp_estimation[p] += col_avg / days_count
+        # pcp_estimations[c, p] = # medio di volte che il cliente c ha effettuato un ordine del prodotto p
         # ^ stima di p(c,p)
-        # pp_estimation[p] = # di volte che il prodotto p è stato ordinato
+        # pp_estimation[p] = media della media delle volte che è stato ordinato il prodotto p
         # ^ stima di p(p)
-        # pc_estimation[p] = # di volte che il cliente c ha ordinato il prodotto p
+        # pc_estimation[c] = media della media di volte che il cliente c ha effettuato un ordine
+        # ^ stima di p(c)
 
         # Calcola il numero giornaliero di ordini medio
         avg = float(ones_cnt) / float(len(matrices.keys()))

@@ -158,8 +158,8 @@ class MultiRegressorPredictor(object):
             ones_cnt += matrix.sum()
             for c in range(0, clients_count):
                 for p in range(0, products_count):
-                    self.pcp_estimation[c, p] += matricies[day][c, p] / days_count
-        avg = float(ones_cnt) / float(len(matricies.keys()))
+                    self.pcp_estimation[c, p] += matrix[c, p] / days_count
+        avg = float(ones_cnt) / float(days_count)
         avg = int(math.ceil(avg))
         self.avg_ones = 1 if avg == 0 else avg
 

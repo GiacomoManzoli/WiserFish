@@ -32,7 +32,7 @@ def generate_probabilites(y):
 def generate_freq_scales(y):
     # type: (np.array) -> np.array
     """
-    Genere un arrau di scale di freuqenza, una per ogni istanza di `y`.
+    Genere un array di scale di freuqenza, una per ogni istanza di `y`.
     Il valore generato è influenzato dalla classe dell'istanza.
     """
     scales = np.array(y, dtype=np.float)
