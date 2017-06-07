@@ -7,6 +7,17 @@ import matplotlib.pyplot as plt
 from numpy.polynomial import polynomial as P
 
 
+class PeriodicFunction(object):
+    def __call__(self, t):
+        pass
+
+    def plot(self):
+        pass
+
+    def calculate(self, x):  # x deve essere scalato in [0, 1]
+        pass
+
+
 class Polynomial(object):
     """
     Classe che rappresenta un polinomio generico
@@ -21,7 +32,7 @@ class Polynomial(object):
         self.degree = degree
         self.a = []
         for i in range(0, degree + 1):
-            self.a +=[random.uniform(-1, 1)]
+            self.a += [random.uniform(-1, 1)]
 
     def __call__(self, x):
         return self.calculate(x)
@@ -52,7 +63,7 @@ class Polynomial(object):
         plt.show()
 
 
-class PeriodicPolynomial(Polynomial):
+class PeriodicPolynomial(Polynomial, PeriodicFunction):
     """
     Polinomio periodico con periodo [0,1], con p(0) = p(1) = theta.
     Il valore del polinomio calcolato viene opportunamente modificato in modo che non sia mai negativo
@@ -129,4 +140,50 @@ class PeriodicPolynomial(Polynomial):
         plt.title(str(self))
         plt.plot(xs, ys, 'k')
         plt.plot([range_min, range_max], [self.theta, self.theta], 'r--')
+        plt.show()
+
+
+class PeriodicThresholdFunction(PeriodicFunction):
+    @staticmethod
+    def create_from_points(points):
+        normalized_points = []
+
+        points = sorted(points, key=lambda tup: tup[0])  # ordina i punti per x crescente
+        max_x, _ = points[len(points) - 1]
+        for p in points:
+            x, y = p
+            normalized_points += [(float(x)/float(max_x), y)]
+
+        return PeriodicThresholdFunction(normalized_points)
+
+    def __init__(self, points):
+        # type: ([(float, float)]) -> None
+        self.points = sorted(points, key=lambda tup: tup[0])  # ordina i punti per x crescente
+        assert self.points[0][0] == 0
+        assert self.points[len(points) - 1][0] == 1
+
+    def __call__(self, x):
+        return self.calculate(x)
+
+    def calculate(self, x):
+        if x < 0:
+            x = x + math.ceil(math.fabs(x))
+        if x > 1:
+            x = x - math.floor(x)
+        # x è nell'intervallo [0,1]
+        # i punti sono ordinati in ordine crescente, li scorro in ordine inverso
+        for i in range(len(self.points)-1,-1,-1):
+            p, fp = self.points[i]
+            if x >= p:
+                return fp
+
+    def plot(self):
+        plt.figure(1)
+        for i in range(0, len(self.points)):
+            x_p, y_p = self.points[i]
+            plt.plot(x_p, y_p, 'bo')  # punto blu
+            if i + 1 < len(self.points):  # plotta una linea fino al prossimo punto
+                x_np, y_np = self.points[i + 1]
+                plt.plot([x_p, x_np], [y_p, y_p], 'k')
+                plt.plot([x_np, x_np], [y_p, y_np], 'r--')
         plt.show()

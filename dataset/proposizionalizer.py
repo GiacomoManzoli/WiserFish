@@ -29,37 +29,32 @@ def proposizionalize(orders, clients, products):
                     'datetime': key,  # timestamp della data dell'ordine
                     'day_of_year': day_of_year,
                     'year': year,
-                    'clientId': clients.iloc[c]['clientId'],
-                    'productId': products.iloc[p]['productId'],
+                    'client_id': clients.iloc[c]['client_id'],
+                    'product_id': products.iloc[p]['product_id'],
                     'ordered': matrix[c, p]
                 })
 
     orders_df = pd.DataFrame(orders_rows,
-                             columns=['datetime', 'day_of_year', 'year', 'clientId', 'productId', 'ordered'])
+                             columns=['datetime', 'day_of_year', 'year', 'client_id', 'product_id', 'ordered'])
     # Tipi corretti
     orders_df['datetime'] = orders_df['datetime'].astype(dtype=long)
     orders_df['day_of_year'] = orders_df['day_of_year'].astype(dtype=int)
     orders_df['year'] = orders_df['year'].astype(dtype=int)
-    orders_df['clientId'] = orders_df['clientId'].astype(dtype=int)
-    orders_df['productId'] = orders_df['productId'].astype(dtype=int)
+    orders_df['client_id'] = orders_df['client_id'].astype(dtype=int)
+    orders_df['product_id'] = orders_df['product_id'].astype(dtype=int)
     orders_df['ordered'] = orders_df['ordered'].astype(dtype=int)
 
     # 2. Effettua il join con gli altri dataframe
-    orders_df = orders_df.join(clients, on='clientId', lsuffix='_o', rsuffix='_c')
-    orders_df = orders_df.join(products, on='productId', lsuffix='_o', rsuffix='_p')
+    orders_df = orders_df.join(clients, on='client_id', lsuffix='_o', rsuffix='_c')
+    orders_df = orders_df.join(products, on='product_id', lsuffix='_o', rsuffix='_p')
 
     # 2.1 Toglie le chiavi duplicate
-    orders_df['client_id'] = orders_df['clientId_o']
-    orders_df['product_id'] = orders_df['productId_o']
-    orders_df = orders_df.drop(['clientId_o', 'clientId_c', 'productId_p', 'productId_o'], axis=1)
+    orders_df['client_id'] = orders_df['client_id_o']
+    orders_df['product_id'] = orders_df['product_id_o']
+    orders_df = orders_df.drop(['client_id_o', 'client_id_c', 'product_id_p', 'product_id_o'], axis=1)
 
     # 3. Toglie i dati che sono stati usati per generare i dati
     orders_df = orders_df.drop('client_name', axis=1)
     orders_df = orders_df.drop('product_name', axis=1)
-
-    orders_df = orders_df.drop('pc', axis=1)
-    orders_df = orders_df.drop('client_freq_scale', axis=1)
-    orders_df = orders_df.drop('pp', axis=1)
-    orders_df = orders_df.drop('product_freq_scale', axis=1)
 
     return orders_df

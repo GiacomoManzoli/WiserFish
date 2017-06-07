@@ -3,7 +3,7 @@ import datetime
 import numpy as np
 import math
 
-from generator.probability_models import ProbabilityModel
+from dataset.generator.probability_models import ProbabilityModel
 
 
 class LessSinfulBaselinePredictor(object):

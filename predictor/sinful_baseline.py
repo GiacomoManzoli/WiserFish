@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import math
 
-from generator.probability_models import CondProbabilityModel
+from dataset.generator.probability_models import CondProbabilityModel
 
 
 class SinfulBaselinePredictor(object):

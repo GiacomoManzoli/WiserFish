@@ -7,7 +7,7 @@ SECS_IN_DAY = 60 * 60 * 24
 
 def scale_fn(t):
     # type: (int) -> float
-    return 1 / t
+    return 1.0 / t
 
 
 class BaselinePredictor(object):
@@ -36,7 +36,7 @@ class BaselinePredictor(object):
 
         norm_factor = 0
         for day in self.matrices.keys():
-            t = (timestamp - day) % SECS_IN_DAY
+            t = int((timestamp - day) /SECS_IN_DAY)
             norm_factor += 1 * scale_fn(t)
             for c in range(0, clients_count):
                 for p in range(0, products_count):

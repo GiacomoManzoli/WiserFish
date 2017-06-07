@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-import pandas as pd
-from sklearn import linear_model
-import numpy as np
 import math
 
+import numpy as np
+import pandas as pd
+from sklearn import linear_model
 from sklearn.svm import SVR
 
-from predictor.proposizionalizer import proposizionalize
+from dataset.proposizionalizer import proposizionalize
 
 SECS_IN_DAY = 60*60*24
 # TODO SISTEMARE QUESTO SCHIFO DI CODICE

@@ -11,10 +11,15 @@ JSON da utilizzare:
 {
   "prefix": "test",
   "clients_count": 100,
-  "products_count": 100,
-  "days_count": 5,
-  "day_interval": 0,
-  "model_name": "cond", /* o "rand" */
+  "client_resturant_ratio": 0.6,
+  "client_gdo_ratio":0.2,
+  "client_regular_ratio":0.5,
+  "client_consumption_ratio": 0.5,
+  "products_count": 10,
+  "product_seasonal_ratio":0.2,
+  "starting_day": "2017-04-03",
+  "days_count": 20,
+  "part_size": 5
   "part_size": 25 /* clients_count deve essere divisibile per part_size */
 }
 ```

@@ -1,9 +1,13 @@
 {
-  "prefix": "notsosmall",
+  "prefix": "notsosmall-partial",
   "clients_count": 10,
-  "products_count": 100,
-  "days_count": 50,
-  "day_interval": 0,
-  "model_name": "noisy",
+  "client_resturant_ratio": 0.6,
+  "client_gdo_ratio":0.2,
+  "client_regular_ratio":0.5,
+  "client_consumption_ratio": 0.5,
+  "products_count": 10,
+  "product_seasonal_ratio":0.2,
+  "starting_day": "2017-04-03",
+  "days_count": 20,
   "part_size": 5
 }

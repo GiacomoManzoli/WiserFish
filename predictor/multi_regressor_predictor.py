@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
-from sklearn import linear_model
+import math
+from datetime import datetime, date
 
 import numpy as np
 import pandas as pd
-import math
-
-from datetime import datetime, date
+from sklearn import linear_model
 from sklearn.linear_model import SGDRegressor
 from sklearn.svm import SVR
 
-from predictor.proposizionalizer import proposizionalize
+from dataset.proposizionalizer import proposizionalize
 
 SECS_IN_DAY = 60 * 60 * 24
 
-
-# TODO SISTEMARE QUESTO SCHIFO DI CODICE
 
 class MultiRegressorPredictor(object):
     """
@@ -28,7 +25,7 @@ class MultiRegressorPredictor(object):
     il prodotto.
     """
 
-    def __init__(self, components, regressor_name='SGD'):
+    def __init__(self, components, regressor_name='SVR'):
         # type: ([str], str) -> None
         self.regressor_name = regressor_name
         self.matrices = {}  # type: dict - dizionario contenente le matrici degli ordini
@@ -68,12 +65,14 @@ class MultiRegressorPredictor(object):
         for index, df in orders.groupby(['client_id']):
             # print index, df.head()
             sums = df.groupby('datetime').sum().reset_index()
-            sums['clientId'] = index
-            sums = sums[['clientId', 'datetime', 'day_of_year', 'year', 'ordered']]
+            sums['client_id'] = index
+            sums = sums[['client_id', 'datetime', 'day_of_year', 'year', 'ordered']]
             # print sums
 
-            train_df = sums.join(clients, on='clientId', rsuffix='_c')
-            # print train_df
+            train_df = sums.join(clients, on='client_id', rsuffix='_c')
+            train_df = train_df.drop(['client_id_c'], axis=1)
+
+            # print "Client train_df", train_df.columns
             y = train_df['ordered'].as_matrix()
             X = train_df.drop(['ordered', 'client_name'], axis=1).as_matrix()
             dfs[index] = (X, y)
@@ -92,12 +91,13 @@ class MultiRegressorPredictor(object):
         dfs = {}
         for index, df in orders.groupby(['product_id']):
             sums = df.groupby('datetime').sum().reset_index()
-            sums['productId'] = index
-            sums = sums[['productId', 'datetime', 'day_of_year', 'year', 'ordered']]
+            sums['product_id'] = index
+            sums = sums[['product_id', 'datetime', 'day_of_year', 'year', 'ordered']]
             # print sums
 
-            train_df = sums.join(products, on='productId', rsuffix='_p')
-            # print train_df
+            train_df = sums.join(products, on='product_id', rsuffix='_p')
+            train_df = train_df.drop(['product_id_p'], axis=1)
+            # print "Product train_df", train_df.columns
             y = train_df['ordered'].as_matrix()
             X = train_df.drop(['ordered', 'product_name'], axis=1).as_matrix()
             dfs[index] = (X, y)
@@ -123,7 +123,7 @@ class MultiRegressorPredictor(object):
         sums['day_of_year'] = sums.apply(lambda row: row['order_date'].toordinal()
                                                      - date(row['order_date'].year, 1, 1).toordinal() + 1, axis=1)
         sums = sums.drop('order_date', axis=1)
-        # print sums
+        # print "Orders_df", sums.columns
 
         y = sums['ordered'].as_matrix()
         X = sums.drop(['ordered'], axis=1).as_matrix()
@@ -163,8 +163,12 @@ class MultiRegressorPredictor(object):
         avg = int(math.ceil(avg))
         self.avg_ones = 1 if avg == 0 else avg
 
+        # Proposizionalizzo i dati
         orders = proposizionalize(matricies, clients, products)
 
+        # print "Orders dataframe:", orders.columns
+
+        # Dati dati proposizionalizzati estraggo quelli relativi ai singoli clienti
         clients_train_data = self.__prepare_clients_dataset(clients, orders)
         for client_id in clients_train_data.keys():
             # NOTA: l'id del cliente deve corrispondere con la posizione della matrice
@@ -172,6 +176,7 @@ class MultiRegressorPredictor(object):
             self.client_regressors[client_id] = self.__build_clf()
             self.client_regressors[client_id].fit(X, y)
 
+        # Dati dati proposizionalizzati estraggo quelli relativi ai singoli prodotti
         products_train_data = self.__prepare_products_dataset(products, orders)
         for product_id in products_train_data.keys():
             # NOTA: l'id del prodotto deve corrispondere con la posizione della matrice
@@ -179,6 +184,7 @@ class MultiRegressorPredictor(object):
             self.product_regressors[product_id] = self.__build_clf()
             self.product_regressors[product_id].fit(X, y)
 
+        # Dati dati proposizionalizzati estraggo quelli relativi solamente agli ordini
         X_period, y_period = self.__prepare_orders_dataset(orders)
         self.period_regressor = self.__build_clf()
         self.period_regressor.fit(X_period, y_period)
@@ -196,10 +202,15 @@ class MultiRegressorPredictor(object):
         client_data = pd.DataFrame([self.clients.iloc[c]])
         product_data = pd.DataFrame([self.products.iloc[p]])
 
+        #print "client_data id", client_data['client_id'].iloc[0]
+        #print "product_data id", product_data['product_id'].iloc[0]
+
         fake_orders = {
             timestamp: np.zeros(shape=(1, 1))
         }
         query = proposizionalize(fake_orders, client_data, product_data)
+
+        #print "Query_df", query.head(1)
 
         client_dict = MultiRegressorPredictor.__prepare_clients_dataset(client_data, query)
         product_dict = MultiRegressorPredictor.__prepare_products_dataset(product_data, query)
@@ -208,20 +219,44 @@ class MultiRegressorPredictor(object):
         X_client, _ = client_dict[client_dict.keys()[0]]
         X_product, _ = product_dict[product_dict.keys()[0]]
 
-        p = 1
-        p_c = self.client_regressors[c].predict(X_client)
-        p_p = self.product_regressors[p].predict(X_product)
-        p_t = self.period_regressor.predict(X_period)
+        #print "Client", X_client
+        #print "Product", X_product
+
+        prob = 1
+        p_c = self.client_regressors[c].predict(X_client)[0]
+        p_p = self.product_regressors[p].predict(X_product)[0]
+        p_t = self.period_regressor.predict(X_period)[0]
+
+        # TODO: altre idee?
+        # con SGD i valori predetti vanno fuori dal range 0..1
+        # con SVR no
+        if p_c < 0:
+            p_c = 0
+        if p_c > 1:
+            p_c = 1
+        if p_p < 0:
+            p_p = 0
+        if p_p > 1:
+            p_p = 1
+        if p_t < 0:
+            p_t = 0
+        if p_t > 1:
+            p_t = 1
+
+        # assert p_c >= 0
+        # assert p_p >= 0
+        # assert p_t >= 0
         p_cp = self.pcp_estimation[c, p]
         if 'p_c' in self.components:
-            p *= p_c
+            prob *= p_c
         if 'p_p' in self.components:
-            p *= p_p
+            prob *= p_p
         if 'p_t' in self.components:
-            p *= p_t
+            prob *= p_t
         if 'p_cp' in self.components:
-            p *= p_cp
-        return p
+            prob *= p_cp
+        #print c, p, p_c, p_p, p_t, prob
+        return prob
 
     def predict_with_threshold(self, order_timestamp, threshold):
         # type: (long, float) -> np.ndarray or None
