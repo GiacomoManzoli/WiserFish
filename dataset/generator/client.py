@@ -117,7 +117,7 @@ class Client(object):
         high_consumption_count = int(math.floor(self.high_consumption_ratio * self.prod_count))
         no_consumption_count = int(math.floor(self.no_consumption_ratio * self.prod_count))
 
-        print high_consumption_count, no_consumption_count
+        #print high_consumption_count, no_consumption_count
 
         product_ids = [i for i in range(0, self.prod_count)]
         # scelgo a caso gli elementi che non vado a consumare
@@ -199,7 +199,7 @@ class ConsumptionClient(Client):
         # type: (long, long, PeriodicPolynomial) -> [Order]
         orders = []
         for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
-            print "--- Day ", ts, "Storage", self.storage
+            #print "--- Day ", ts, "Storage", self.storage
             for p in range(0, self.prod_count):
                 scaled_t = float(datetime.datetime
                                  .fromtimestamp(ts)
@@ -236,7 +236,7 @@ class ConsumptionClient(Client):
                                         product_id=p,
                                         requested_qty=requested_qty,
                                         received_qty=received_qty))
-                    print "Ordered product_%d qty %f - received %f" % (p, requested_qty, received_qty)
+                    #print "Ordered product_%d qty %f - received %f" % (p, requested_qty, received_qty)
 
         return orders
 
@@ -258,7 +258,7 @@ class RegularClient(Client):
         # for t in range(from_day, to_day + 1): # Non posso usare
 
         for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
-            print "--- Day ", ts, "Storage", self.storage
+            #print "--- Day ", ts, "Storage", self.storage
             #ts = t * SECS_IN_DAY
             dow = datetime.datetime.fromtimestamp(ts).timetuple().tm_wday
             if dow in self.order_days:
@@ -317,7 +317,7 @@ class RegularClient(Client):
                                             product_id=p,
                                             requested_qty=requested_qty,
                                             received_qty=received_qty))
-                        print "Ordered product_%d qty %f - received %f" % (p, requested_qty, received_qty)
+                        #print "Ordered product_%d qty %f - received %f" % (p, requested_qty, received_qty)
         return orders
 
 
@@ -353,6 +353,6 @@ class RandomClient(Client):
                                         product_id=p,
                                         requested_qty=1,
                                         received_qty=1))
-                    print "Ordered product_%d qty %f - received %f" % (p, 1, 1)
+                    #print "Ordered product_%d qty %f - received %f" % (p, 1, 1)
 
         return orders

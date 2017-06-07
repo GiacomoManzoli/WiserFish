@@ -36,14 +36,17 @@ def generate_dataset(product_count, seasonal_ratio,
 def generate_orders(clients, from_ts, to_ts, global_trend):
     orders = []
     for client in clients:
+        print "Ordini per il cliente ", client.name
         orders += client.generate_orders(from_ts, to_ts, global_trend)
     return orders
+
 
 ####
 # Metodi ausiliari per la generazione del dataset
 ####
 
 def __generate_products(product_count, seasonal_ratio=0.75):
+    print "Genero i prodotti..."
     products = []
 
     seasonals = [True] * int(math.floor(product_count * seasonal_ratio))
@@ -84,6 +87,8 @@ def __generate_clients(client_count, regular_ratio, consumption_ratio, gdo_ratio
     :param resturant_ratio: rapporto di clienti che si comportano come un ristorante
     :return: clienti generati
     """
+    print "Genero i clienti..."
+
     clients = []
 
     # Tipo di clienti: regolari, random, a consumo
@@ -129,5 +134,3 @@ def __generate_clients(client_count, regular_ratio, consumption_ratio, gdo_ratio
                                                    order_days=order_days))
 
     return clients
-
-

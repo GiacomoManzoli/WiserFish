@@ -5,12 +5,14 @@ from datetime import datetime, date
 import numpy as np
 import pandas as pd
 from sklearn import linear_model
-from sklearn.linear_model import SGDRegressor
+from sklearn.linear_model import SGDRegressor, PassiveAggressiveRegressor
 from sklearn.svm import SVR
 
 from dataset.proposizionalizer import proposizionalize
 
 SECS_IN_DAY = 60 * 60 * 24
+
+# TODO cambiare i p_c in w_c perché in fin dei conti non sono probabilità ma pasi.
 
 
 class MultiRegressorPredictor(object):
@@ -49,6 +51,8 @@ class MultiRegressorPredictor(object):
             clf = linear_model.SGDRegressor()
         elif self.regressor_name == 'SVR':
             clf = SVR()
+        elif self.regressor_name == 'PAR':
+            clf = PassiveAggressiveRegressor()
         return clf
 
     @staticmethod
@@ -232,16 +236,22 @@ class MultiRegressorPredictor(object):
         # con SVR no
         if p_c < 0:
             p_c = 0
+            print "truncated 0 pc"
         if p_c > 1:
             p_c = 1
+            print "truncated 1 pc"
         if p_p < 0:
             p_p = 0
+            print "truncated 0 pp"
         if p_p > 1:
             p_p = 1
+            print "truncated 1 pp"
         if p_t < 0:
             p_t = 0
+            print "truncated 0 pt"
         if p_t > 1:
             p_t = 1
+            print "truncated 1 pt"
 
         # assert p_c >= 0
         # assert p_p >= 0

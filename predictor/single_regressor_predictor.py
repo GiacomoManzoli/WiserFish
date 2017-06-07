@@ -4,6 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 from sklearn import linear_model
+from sklearn.linear_model import PassiveAggressiveRegressor
 from sklearn.svm import SVR
 
 from dataset.proposizionalizer import proposizionalize
@@ -18,7 +19,7 @@ class SingleRegressorPredictor(object):
     I regressori possono essere addestrati sui dati giornalieri oppure aggregando i giorni.
     """
 
-    def __init__(self, group_size=5, regressor_name='SGD'):
+    def __init__(self, group_size=5, regressor_name='SVR'):
         # type: (int, str) -> None
         self.regressor_name = regressor_name
         self.avg_ones = None
@@ -78,6 +79,8 @@ class SingleRegressorPredictor(object):
                 clf = linear_model.SGDRegressor()
             elif self.regressor_name == 'SVR':
                 clf = SVR()
+            elif self.regressor_name == 'PAR':
+                clf = PassiveAggressiveRegressor()
 
             self.regressor_matrix[c, p] = clf
             self.regressor_matrix[c, p].fit(X, y)
@@ -110,7 +113,7 @@ class SingleRegressorPredictor(object):
         query = query.drop('ordered', axis=1)
         query = self.__extract_day_group(query)
         # print query
-        return self.regressor_matrix[c, p].predict(query.as_matrix())
+        return self.regressor_matrix[c, p].predict(query.as_matrix())[0]
 
     def predict_with_threshold(self, order_timestamp, threshold):
         # type: (long, float) -> np.ndarray or None

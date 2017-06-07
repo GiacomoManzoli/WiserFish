@@ -11,6 +11,7 @@ import math
 import numpy as np
 import pandas as pd
 from sklearn import tree, ensemble
+from sklearn.linear_model import PassiveAggressiveRegressor
 from sklearn.metrics import roc_auc_score
 from sklearn.naive_bayes import BernoulliNB
 
@@ -77,6 +78,7 @@ def main(argv):
     print "Total duration: ", time.time() - load_start_time, "seconds"
 
     dataset_star_ts = config.starting_day
+    dataset_end_ts = long(dataset_star_ts + (config.days_count -1) * SECS_IN_DAY)
 
     print orders_df.head(5)
 
@@ -85,8 +87,10 @@ def main(argv):
     ############################
 
     train_set_start_ts = long(dataset_star_ts)
-    train_set_end_ts = long(train_set_start_ts + (int(math.floor(config.days_count / 2)) * SECS_IN_DAY ))
-
+    #train_set_end_ts = long(train_set_start_ts + (int(math.floor(config.days_count / 2)-1) * SECS_IN_DAY ))
+    train_set_end_ts = long(dataset_end_ts - 7  * SECS_IN_DAY )
+    # ^ il -1 serve perché gli estremi dell'intervallo sono entrambi compresi e quindi senza il -1 si avrebbe un
+    # train set con days_count+1 giorni
     X_train_dict, X_train, y_train = make_train_set(clients_df=clients_df,
                                                     products_df=products_df,
                                                     orders_df=orders_df,
@@ -97,14 +101,15 @@ def main(argv):
         print "ERROR: EMPTY TRAIN SET"
         return
 
+
     ############################
     # Test set generation
     ############################
     print "Query generation..."
 
     query_ts = [
-        #train_set_end_ts + SECS_IN_DAY,  # Giorno immediatamente successivo alla fine del TS
-        #train_set_end_ts + 2 * SECS_IN_DAY,  # Due giorni dopo la fine del TS
+        train_set_end_ts + SECS_IN_DAY,  # Giorno immediatamente successivo alla fine del TS
+        train_set_end_ts + 2 * SECS_IN_DAY,  # Due giorni dopo la fine del TS
         train_set_end_ts + 7 * SECS_IN_DAY  # Una settimana dopo la fine del TS
     ]
 
@@ -135,21 +140,25 @@ def main(argv):
     forest = ensemble.RandomForestClassifier()
 
     clfs = [
-        ("base", BaselinePredictor()),
+        #("base", BaselinePredictor()),
         # ("sinful", SinfulBaselinePredictor()), Non può più essere utilizzato, perché usa p_c e p_p
-        ("less", LessSinfulBaselinePredictor()),
-        ("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
-        ("tree_10", tree10),
-        ("tree_N", treeN),
-        ("bern", bern),
-        ("forest", forest),
-        ("multi_pc_pp", MultiRegressorPredictor(components=['p_c', 'p_p'])),
-        ("multi_pc_pp_pt", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t'])),
-        ("multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t', 'p_cp'])),
-        ("multi_pt_p_cp", MultiRegressorPredictor(components=['p_t','p_cp'])),
-        ('single_1', SingleRegressorPredictor(regressor_name='SVR', group_size=1)),
-        ('single_3', SingleRegressorPredictor(regressor_name='SVR', group_size=3)),
-        ('single_5', SingleRegressorPredictor(regressor_name='SVR', group_size=5))
+        #("less", LessSinfulBaselinePredictor()),
+        #("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
+        #("tree_10", tree10),
+        #("tree_N", treeN),
+        #("bern", bern),
+        #("forest", forest),
+        #("multi_pc_pp", MultiRegressorPredictor(components=['p_c', 'p_p'])),
+        #("multi_pc_pp_pt", MultiRegressorPredictor(components=['p_c', 'p_p', 'p_t'])),
+        #("svr_multi_pc_pp_pt_p_cp", MultiRegressorPredictor(regressor_name='SVR', components=['p_c', 'p_p', 'p_t', 'p_cp'])),
+        #("multi_pt_p_cp", MultiRegressorPredictor(components=['p_t','p_cp'])),
+        #('svr_single_1', SingleRegressorPredictor(regressor_name='SVR', group_size=1)),
+        # ('single_3', SingleRegressorPredictor(regressor_name='SVR', group_size=3)),
+        # ('single_5', SingleRegressorPredictor(regressor_name='SVR', group_size=5)),
+        ('par_multi_pc_pp_pt_p_cp', MultiRegressorPredictor(regressor_name='PAR', components=['p_c', 'p_p', 'p_t', 'p_cp']))#,
+        #('par_single_1', SingleRegressorPredictor(regressor_name='PAR', group_size=1)),
+        #('sgd_multi_pc_pp_pt_p_cp', MultiRegressorPredictor(regressor_name='SGD', components=['p_c', 'p_p', 'p_t', 'p_cp'])),
+        #('sgd_single_1', SingleRegressorPredictor(regressor_name='SGD', group_size=1)),
     ]
 
     with open("%s/%s.csv" % (OUT_DIR_NAME, run_name), 'wb') as output:
@@ -184,7 +193,9 @@ def main(argv):
                     #    predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
                     elif name == "single_1" or name == "single_3" or name == "single_5" or name == "single" \
                             or name == "multi_pc_pp" or name == "multi_pc_pp_pt" \
-                            or name == "multi_pc_pp_pt_p_cp" or name == "multi_pt_p_cp":
+                            or name == "multi_pc_pp_pt_p_cp" or name == "multi_pt_p_cp" or name == "sgd_single_1" \
+                            or name == "svr_single_1" or name == "par_single_1" or name == "sgd_multi_pc_pp_pt_p_cp" \
+                            or name == "svr_multi_pc_pp_pt_p_cp" or name == "par_multi_pc_pp_pt_p_cp":
                         clf.fit(clients_df, products_df, X_train_dict)
                         predictions = clf.predict_with_topn(t)  # reshape as a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)
@@ -202,7 +213,7 @@ def main(argv):
                     alt_roc_auc = -1
                     test_vec_sum = np.sum(y_test)
                     can_calculate_AUC = test_vec_sum != 0 and test_vec_sum != y_test.size
-                    if can_calculate_AUC:
+                    if can_calculate_AUC and predictions_probabilities is not None:
                         roc_auc = roc_auc_score(y_true=y_test, y_score=predictions_probabilities[:, 1])
                         alt_roc_auc = roc_auc_score(y_true=y_test, y_score=predictions_probabilities[:, 0])
 

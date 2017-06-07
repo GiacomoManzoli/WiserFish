@@ -1,0 +1,13 @@
+{
+  "prefix": "t2-big",
+  "clients_count": 2000,
+  "client_resturant_ratio": 0.6,
+  "client_gdo_ratio":0.2,
+  "client_regular_ratio":0.5,
+  "client_consumption_ratio": 0.45,
+  "products_count": 2000,
+  "product_seasonal_ratio":0.2,
+  "starting_day": "2017-10-01",
+  "days_count": 37,
+  "part_size": 5
+}

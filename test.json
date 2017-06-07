@@ -5,9 +5,9 @@
   "client_gdo_ratio":0.2,
   "client_regular_ratio":0.5,
   "client_consumption_ratio": 0.5,
-  "products_count": 10,
+  "products_count": 20,
   "product_seasonal_ratio":0.2,
   "starting_day": "2017-04-03",
-  "days_count": 20,
+  "days_count": 60,
   "part_size": 5
 }
