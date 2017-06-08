@@ -1,5 +1,5 @@
 {
-  "prefix": "t2-big",
+  "prefix": "t-annual-big",
   "clients_count": 2000,
   "client_resturant_ratio": 0.6,
   "client_gdo_ratio":0.2,

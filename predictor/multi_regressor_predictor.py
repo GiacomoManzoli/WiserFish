@@ -10,7 +10,6 @@ from sklearn.svm import SVR
 
 from dataset.proposizionalizer import proposizionalize
 
-SECS_IN_DAY = 60 * 60 * 24
 
 # TODO cambiare i p_c in w_c perché in fin dei conti non sono probabilità ma pasi.
 
@@ -194,10 +193,10 @@ class MultiRegressorPredictor(object):
         self.period_regressor.fit(X_period, y_period)
         return
 
-    def __calculate_order_probability(self, c, p, timestamp):
+    def __calculate_weight(self, c, p, timestamp):
         # type: (int, int, long) -> float
         """
-        Calcola la probabilità che il cliente c ordini il prodotto p nel periodo t
+        Calcola il peso della cella [c,p] nella matrice per il giorno rappresentato dal timestamp
         :param c: (int) posizione del cliente nella matrice (coincide con l'id)
         :param p: (int) posizione del prodotto nella matrice (coincide con l'id) 
         :param t: (long) timestamp dell'ordine
@@ -226,47 +225,23 @@ class MultiRegressorPredictor(object):
         #print "Client", X_client
         #print "Product", X_product
 
-        prob = 1
-        p_c = self.client_regressors[c].predict(X_client)[0]
-        p_p = self.product_regressors[p].predict(X_product)[0]
-        p_t = self.period_regressor.predict(X_period)[0]
+        weight = 1
+        w_c = self.client_regressors[c].predict(X_client)[0]
+        w_p = self.product_regressors[p].predict(X_product)[0]
+        w_t = self.period_regressor.predict(X_period)[0]
 
-        # TODO: altre idee?
-        # con SGD i valori predetti vanno fuori dal range 0..1
-        # con SVR no
-        if p_c < 0:
-            p_c = 0
-            print "truncated 0 pc"
-        if p_c > 1:
-            p_c = 1
-            print "truncated 1 pc"
-        if p_p < 0:
-            p_p = 0
-            print "truncated 0 pp"
-        if p_p > 1:
-            p_p = 1
-            print "truncated 1 pp"
-        if p_t < 0:
-            p_t = 0
-            print "truncated 0 pt"
-        if p_t > 1:
-            p_t = 1
-            print "truncated 1 pt"
-
-        # assert p_c >= 0
-        # assert p_p >= 0
-        # assert p_t >= 0
         p_cp = self.pcp_estimation[c, p]
-        if 'p_c' in self.components:
-            prob *= p_c
-        if 'p_p' in self.components:
-            prob *= p_p
-        if 'p_t' in self.components:
-            prob *= p_t
-        if 'p_cp' in self.components:
-            prob *= p_cp
-        #print c, p, p_c, p_p, p_t, prob
-        return prob
+
+        if 'w_c' in self.components:
+            weight *= w_c
+        if 'w_p' in self.components:
+            weight *= w_p
+        if 'w_t' in self.components:
+            weight *= w_t
+        if 'w_cp' in self.components:
+            weight *= p_cp
+        #print c, p, w_c, w_p, w_t, prob
+        return weight
 
     def predict_with_threshold(self, order_timestamp, threshold):
         # type: (long, float) -> np.ndarray or None
@@ -287,8 +262,8 @@ class MultiRegressorPredictor(object):
         # check threshold
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                order_probability = self.__calculate_order_probability(c, p, order_timestamp)
-                predictions[c, p] = 1 if order_probability >= threshold else 0
+                weight = self.__calculate_weight(c, p, order_timestamp)
+                predictions[c, p] = 1 if weight >= threshold else 0
         return predictions
 
     def predict_with_topn(self, order_timestamp):
@@ -309,7 +284,7 @@ class MultiRegressorPredictor(object):
         probs = np.zeros(shape=(clients_count, products_count))
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                probs[c, p] = self.__calculate_order_probability(c, p, order_timestamp)
+                probs[c, p] = self.__calculate_weight(c, p, order_timestamp)
 
         # copy is needed because reasons... (reshape + sort)
         probs_vec = np.reshape(probs.copy(), probs.size)
@@ -339,7 +314,7 @@ class MultiRegressorPredictor(object):
         probs = np.zeros(shape=(clients_count, products_count))
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                probs[c, p] = self.__calculate_order_probability(c, p, order_timestamp)
+                probs[c, p] = self.__calculate_weight(c, p, order_timestamp)
 
         vectorized_weights = np.reshape(probs, (1, probs.size))  # (1x Nweights)
         result = np.ones(shape=(probs.size, 2))

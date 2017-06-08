@@ -7,9 +7,9 @@ from sklearn import linear_model
 from sklearn.linear_model import PassiveAggressiveRegressor
 from sklearn.svm import SVR
 
+from dataset.generator.values import SECS_IN_DAY
 from dataset.proposizionalizer import proposizionalize
 
-SECS_IN_DAY = 60*60*24
 # TODO SISTEMARE QUESTO SCHIFO DI CODICE
 
 class SingleRegressorPredictor(object):
