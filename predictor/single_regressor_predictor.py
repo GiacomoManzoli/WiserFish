@@ -127,7 +127,7 @@ class SingleRegressorPredictor(object):
         if self.regressor_matrix is None:
             return None
 
-        predictions = np.zeros(shape=self.regressor_matrix.shape)
+        predictions = np.zeros(shape=self.regressor_matrix.shape, dtype=int)
         clients_count = predictions.shape[0]
         products_count = predictions.shape[1]
 

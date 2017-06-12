@@ -7,8 +7,10 @@ SECS_IN_DAY = 60 * 60 * 24
 
 def scale_fn(t):
     # type: (int) -> float
-    return 1.0 / t
-
+    if t != 0:
+        return 1.0 / t
+    else:
+        return 1.0
 
 class BaselinePredictor(object):
     """
@@ -36,7 +38,7 @@ class BaselinePredictor(object):
 
         norm_factor = 0
         for day in self.matrices.keys():
-            t = int((timestamp - day) /SECS_IN_DAY)
+            t = int((timestamp - day) / SECS_IN_DAY)
             norm_factor += 1 * scale_fn(t)
             for c in range(0, clients_count):
                 for p in range(0, products_count):
@@ -79,13 +81,13 @@ class BaselinePredictor(object):
             return None
         clients_count = self.matrices[self.matrices.keys()[0]].shape[0]
         products_count = self.matrices[self.matrices.keys()[0]].shape[1]
-        predictions = np.zeros(shape=(clients_count, products_count))
+        predictions = np.zeros(shape=(clients_count, products_count),dtype=int)
 
         weights = self.__calculate_weights(order_timestamp)
 
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                predictions[c, p] = 1 if weights[c, p] >= threshold else 0
+                predictions[c, p] = int(1) if weights[c, p] >= threshold else int(0)
 
         return predictions
 

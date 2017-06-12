@@ -255,7 +255,7 @@ class MultiRegressorPredictor(object):
         if self.pcp_estimation is None:
             return None
 
-        predictions = np.zeros(shape=self.pcp_estimation.shape)
+        predictions = np.zeros(shape=self.pcp_estimation.shape, dtype=int)
         clients_count = predictions.shape[0]
         products_count = predictions.shape[1]
 

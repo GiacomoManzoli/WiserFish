@@ -98,8 +98,8 @@ def main(argv):
     print "Query generation..."
 
     query_ts = [
-        #train_set_end_ts + SECS_IN_DAY,  # Giorno immediatamente successivo alla fine del TS
-        #train_set_end_ts + 2 * SECS_IN_DAY,  # Due giorni dopo la fine del TS
+        train_set_end_ts + SECS_IN_DAY,  # Giorno immediatamente successivo alla fine del TS
+        train_set_end_ts + 2 * SECS_IN_DAY,  # Due giorni dopo la fine del TS
         train_set_end_ts + 7 * SECS_IN_DAY  # Una settimana dopo la fine del TS
     ]
 
@@ -124,20 +124,16 @@ def main(argv):
     ############################
     # Predictions
     ############################
-    treeN = tree.DecisionTreeClassifier()
-    tree10 = tree.DecisionTreeClassifier(max_depth=10)
-    bern = BernoulliNB()
-    forest = ensemble.RandomForestClassifier()
 
     clfs = [
         ("base", BaselinePredictor()),
         # ("sinful", SinfulBaselinePredictor()), Non può più essere utilizzato, perché usa p_c e p_p
         ("less", LessSinfulBaselinePredictor()),
         # ("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
-        ("tree_10", tree10),
-        # ("tree_N", treeN),
-        # ("bern", bern),
-        # ("forest", forest),
+        ("tree_10", tree.DecisionTreeClassifier(max_depth=10)),
+        # ("tree_N", tree.DecisionTreeClassifier()),
+        # ("bern", BernoulliNB()),
+        # ("forest", ensemble.RandomForestClassifier()),
         ("svr_multi_pc_pp", MultiRegressorPredictor(components=['w_c', 'w_p'],
                                                     regressor_name='SVR')),
         ("svr_multi_pc_pp_pt", MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t'],
@@ -175,20 +171,36 @@ def main(argv):
 
     with open("%s/%s/%s.csv" % (OUT_DIR_NAME, config.base_prefix, run_name), 'wb') as output:
         writer = csv.writer(output, delimiter=';')
-        writer.writerow(['query', 'name', str('acc'), str('prec'), str('rec'), str('roc_auc'), str('alt_roc_auc')])
-        for query in queries:
-            query_name, X_test_dict, X_test, y_test = query
+        writer.writerow(['query', 'name', str('acc'), str('prec'), str('rec'), str('roc_auc')])
+        for pair in clfs:
+            name, clf = pair
 
-            # X_test_dict: dati per il test in formato dizionario di matrice
-            # X_test: dati per il test sotto forma di ndarray
-            # y_test: label per i dati di test sotto forma di ndarray (vettore singolo)
+            if run_name not in name and name != "base" and name != "less" and name!="all":
+                continue
 
-            y_test_matrix = y_test.reshape((config.clients_count, config.products_count))
-            print "Expected:"
-            print y_test
-            for pair in clfs:
-                name, clf = pair
-                print "--- Classifier:", name, "---"
+            print "--- Classifier:", name, "---"
+
+            print "Fitting..."
+            if name == "base" or name == "less":
+                clf.fit(X_train_dict)
+            elif "multi" in name or "single" in name:
+                clf.fit(clients_df, products_df, X_train_dict)
+            else:
+                clf.fit(X_train, y_train)
+
+            for query in queries:
+                query_name, X_test_dict, X_test, y_test = query
+
+                # X_test_dict: dati per il test in formato dizionario di matrice
+                # X_test: dati per il test sotto forma di ndarray
+                # y_test: label per i dati di test sotto forma di ndarray (vettore singolo)
+
+                print "Query:", query_name
+
+                y_test_matrix = y_test.reshape((config.clients_count, config.products_count))
+                print "Expected:"
+                print y_test_matrix
+
                 predictions = None
                 predictions_probabilities = None
 
@@ -196,22 +208,14 @@ def main(argv):
 
                 if len(X_test_dict.keys()) > 0:
                     if name == "base" or name == "less":
-                        clf.fit(X_train_dict)
                         predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)  # returns a matrix like a SKLearn classifier
-                    # elif name == "sinful":
-                    #    clf.fit(clients_df, products_df, X_train_dict)
-                    #    predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
-                    #    predictions_probabilities = clf.predict_proba(t)  # retruns a matrix like a SKLearn classifier
                     elif "multi" in name or "single" in name:
-                        clf.fit(clients_df, products_df, X_train_dict)
                         predictions = clf.predict_with_topn(t)  # reshape as a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(t)
                     else:
-                        clf.fit(X_train, y_train)
                         predictions = clf.predict(X_test)
-                        predictions = predictions.reshape(
-                            y_test_matrix.shape)  # reshape as a NClients x NProducts matrix
+                        predictions = predictions.reshape(y_test_matrix.shape)  # reshape as a NClients x NProducts matrix
                         predictions_probabilities = clf.predict_proba(X_test)
 
                 if predictions is not None:
@@ -219,15 +223,14 @@ def main(argv):
                     acc, prec, rec = calculate_metrics(predictions, y_test_matrix)  # funziona comparando le matrici
 
                     roc_auc = -1
-                    alt_roc_auc = -1
                     test_vec_sum = np.sum(y_test)
                     can_calculate_AUC = test_vec_sum != 0 and test_vec_sum != y_test.size
                     if can_calculate_AUC and predictions_probabilities is not None:
                         roc_auc = roc_auc_score(y_true=y_test, y_score=predictions_probabilities[:, 1])
-                        alt_roc_auc = roc_auc_score(y_true=y_test, y_score=predictions_probabilities[:, 0])
 
                     print name, acc, prec, rec, roc_auc
-                    writer.writerow([query_name, name, str(acc), str(prec), str(rec), str(roc_auc), str(alt_roc_auc)])
+                    writer.writerow([query_name, name, str(acc), str(prec), str(rec), str(roc_auc)])
+
 
 
 if __name__ == '__main__':
