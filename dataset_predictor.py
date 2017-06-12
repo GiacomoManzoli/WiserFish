@@ -175,7 +175,7 @@ def main(argv):
         for pair in clfs:
             name, clf = pair
 
-            if run_name not in name and name != "base" and name != "less" and name!="all":
+            if run_name not in name and name != "base" and name != "less" and run_name != "all":
                 continue
 
             print "--- Classifier:", name, "---"
