@@ -1,97 +1,109 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import getopt
 import sys
 import time
 
-import datetime
 import numpy as np
+import sqlite3
+
+import pandas as pd
 from sklearn.metrics import roc_auc_score
 
-from dataset.generator.generator_v2 import generate_dataset
-from dataset.generator.polynomial import Polynomial, PeriodicPolynomial, PeriodicThresholdFunction
-from dataset.generator.product import Product
 from dataset.generator.values import *
-from dataset.manager import save_dataset, load_dataset, make_order_matrices
+from dataset.manager import save_dataset, load_orders_dataframe
+from predictor.baseline import BaselinePredictor
+from predictor.less_sinful_baseline import LessSinfulBaselinePredictor
+from predictor.multi_regressor_predictor import MultiRegressorPredictor
+from predictor.single_regressor_predictor import SingleRegressorPredictor
+from util import ConfigurationFile
 
 
 def main(argv):
-    # poly = PeriodicPolynomial(grade=20, theta=1)
-    # poly.plot(range_min=-1, range_max=1)
+    load_from_file = False
+    json_file_path = ""
 
-    poly2 = PeriodicPolynomial(degree=20, theta=1, build_mode='fit', points=15)
-    # poly2.plot(range_min=-1, range_max=1)
+    try:
+        (opts, args) = getopt.getopt(argv, "f:r:")
+    except getopt.GetoptError, e:
+        print "Wrong options"
+        print e
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt in ("-f", "--file"):
+            load_from_file = True
+            json_file_path = arg
+        if opt in ("-r", "--runname"):
+            run_name = arg
 
-    points = [
-        (0, 1),
-        (1, 1.1),
-        (2, 0.4),
-        (3, 1.9),
-        (4, 1),
-        (5, 2),
-        (6, 1)
-    ]
+    if not load_from_file:
+        print "Errore: non è stato specificato il file!"
+        return
 
-    fn = PeriodicThresholdFunction.create_from_points(points)
-    # fn.plot()
+    config = ConfigurationFile(json_file_path)
 
-    for p in points:
-        x, y = p
-        print x, y, x / 6.0, fn(x / 6.0)
-        assert fn(x / 6.0) == y
+    dataset_star_ts = config.starting_day
+    dataset_end_ts = long(dataset_star_ts + (config.days_count - 1) * SECS_IN_DAY)
+    train_set_start_ts = long(dataset_star_ts)
+    train_set_end_ts = long(dataset_end_ts - 7 * SECS_IN_DAY)
 
-    # products = [Product(i) for i in range(0,10)]
+    cnx = sqlite3.connect('./datasets/%s/data/%s.db' % (config.base_prefix, config.base_prefix))
 
-    # client = ClientFactory.create_consumption_client(id=0,
-    #                                                  products=products,
-    #                                                  client_type=CLIENT_TYPE_GDO,
-    #                                                  high_consumption_ratio=0.25,
-    #                                                  no_consumption_ratio=0.5)
-    # client = ClientFactory.create_regular_client(id=0,
-    #                                              products=products,
-    #                                              client_type=CLIENT_TYPE_GDO,
-    #                                              order_days=[MONDAY, FRIDAY],
-    #                                              high_consumption_ratio=0.25,
-    #                                              no_consumption_ratio=0.5)
-    # client = ClientFactory.create_random_client(id=0,
-    #                                             products=products,
-    #                                             client_type=CLIENT_TYPE_GDO,
-    #                                             high_consumption_ratio=0.25,
-    #                                             no_consumption_ratio=0.5)
-    # global_trend = PeriodicPolynomial(degree=20, theta=1, build_mode='fit', points=20)
+    query_ts = train_set_end_ts + SECS_IN_DAY
+    query_ts = 1493244000
 
-    # global_trend.plot(0, 1)
+    single = SingleRegressorPredictor(regressor_name='SVR')
+    single.fit(cnx, clients_count=config.clients_count, products_count=config.products_count,
+               from_ts=train_set_start_ts, to_ts=train_set_end_ts)
+    pred_1 = single.predict_proba(query_ts)
 
-    clients, products, orders, global_trend = generate_dataset(product_count=10,
-                                                               seasonal_ratio=0.8,
-                                                               client_count=4,
-                                                               resturant_ratio=0.25,
-                                                               gdo_ratio=0.5, regular_ratio=0.2,
-                                                               consumption_ratio=0.6,
-                                                               from_ts=time.time(),
-                                                               to_ts=time.time() + 15 * SECS_IN_DAY)
-    # print "--- Products ---"
-    # for p in products:
-    #    print p
-    #
-    # print "--- Client ---"
-    # client = clients[0]
-    # print client
-    # print client.consumptions
-    #
-    # print "--- Orders ---"
-    # for o in orders:
-    #    print o
+    multi = MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t', 'w_cp'], regressor_name='SVR')
+    multi.fit(cnx, clients_count=config.clients_count, products_count=config.products_count,
+              from_ts=train_set_start_ts, to_ts=train_set_end_ts)
 
-    save_dataset(clients=clients,
-                 products=products,
-                 orders=orders,
-                 global_trend=global_trend,
-                 dataset_name='sample')
-    client_df, product_df, order_df = load_dataset('sample')
+    pred_multi = multi.predict_proba(query_ts)
 
-    matrices = make_order_matrices(len(clients), len(products), order_df)
+    query = "select client_id, product_id " \
+            "from orders " \
+            "where datetime == %d " \
+            "order by client_id, product_id" % query_ts
+    # ^ ORDER BY è fondamentale per effettuare la creazione in modo efficiente
+    cursor = cnx.execute(query)
 
-    print matrices
+    next_row = cursor.fetchone()
+    df_rows = []
+    for c in range(0, config.clients_count):
+        for p in range(0, config.products_count):
+            ordered = 0
+            if next_row is not None and next_row == (c, p):
+                ordered = 1
+                next_row = cursor.fetchone()
+
+            df_rows.append({
+                'ordered': ordered
+            })
+    y_test = pd.DataFrame(df_rows,
+                          columns=['ordered'])['ordered'].as_matrix()
+
+    base = BaselinePredictor()
+    base.fit(cnx, clients_count=config.clients_count, products_count=config.products_count,
+             from_ts=train_set_start_ts, to_ts=train_set_end_ts)
+    pred_base = base.predict_proba(query_ts)
+
+    less = LessSinfulBaselinePredictor()
+    less.fit(cnx, clients_count=config.clients_count, products_count=config.products_count,
+             from_ts=train_set_start_ts, to_ts=train_set_end_ts)
+    pred_less = less.predict_proba(query_ts)
+
+    test_vec_sum = np.sum(y_test)
+    can_calculate_auc = test_vec_sum != 0 and test_vec_sum != y_test.size
+    if can_calculate_auc:
+        roc_auc_base = roc_auc_score(y_true=y_test, y_score=pred_base[:, 1])
+        roc_auc_less = roc_auc_score(y_true=y_test, y_score=pred_less[:, 1])
+        roc_auc_1 = roc_auc_score(y_true=y_test, y_score=pred_1[:, 1])
+        roc_auc_multi = roc_auc_score(y_true=y_test, y_score=pred_multi[:, 1])
+        print "AUC"
+        print roc_auc_base, roc_auc_less, roc_auc_1, roc_auc_multi
 
 
 if __name__ == '__main__':

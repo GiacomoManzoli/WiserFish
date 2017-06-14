@@ -1,24 +1,24 @@
 # -*- coding: utf-8 -*-
 import math
-from datetime import datetime, date
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
+import sqlite3
 from sklearn import linear_model
 from sklearn.linear_model import SGDRegressor, PassiveAggressiveRegressor
 from sklearn.svm import SVR
 
-from dataset.proposizionalizer import proposizionalize
+from dataset.generator.values import SECS_IN_DAY
+from util import Log
 
-
-# TODO cambiare i p_c in w_c perché in fin dei conti non sono probabilità ma pasi.
+TAG = "MultiRegressorPredictor"
 
 
 class MultiRegressorPredictor(object):
     """
-    Predittore che utilizza più regressori per stimare il variare delle distribuzioni in probabilità in base al tempo
-    trascorso.
-    - Un regressore per ogni clienti che stima come varia la probabilità che il cliente faccia un ordine
+    Predittore che utilizza più regressori per stimare la probabilità che un cliente ordini
+    - Un regressore per ogni cliente che stima come varia la probabilità che il cliente faccia un ordine
     - Un regressore per ogni prodotto che stima come varia la probabilità che un prodotto sia ordinato
     - Un regressore che stima come varia la probabilità generale che ci sia un'ordine
     Totale: N_clienti + N_prodotti + 1 regressori
@@ -26,13 +26,15 @@ class MultiRegressorPredictor(object):
     il prodotto.
     """
 
+    CLIENT_TRAIN_COLS = ['client_id', 'datetime', 'day_of_year', 'year']
+    PRODUCT_TRAIN_COLS = ['product_id', 'datetime', 'day_of_year', 'year']
+    PERIOD_TRAIN_COLS = ['datetime', 'day_of_year', 'year']
+    TARGET_COL = 'cnt_ordered'
+
     def __init__(self, components, regressor_name='SVR'):
         # type: ([str], str) -> None
         self.regressor_name = regressor_name
-        self.matrices = {}  # type: dict - dizionario contenente le matrici degli ordini
         self.avg_ones = None  # type: float
-        self.clients = None
-        self.products = None
         self.pcp_estimation = None
         self.client_regressors = None
         self.product_regressors = None
@@ -40,9 +42,9 @@ class MultiRegressorPredictor(object):
         self.components = components
 
     def __build_clf(self):
-        # type: () -> SVR or SGDRegressor or None
+        # type: () -> SVR or SGDRegressor or PassiveAggressiveRegressor or None
         """
-        Crea un classificatore in base a quanto specificato alla creazione dell'oggetto
+        Crea un regressore in base a quanto specificato alla creazione dell'oggetto
         :return: 
         """
         clf = None
@@ -55,140 +57,217 @@ class MultiRegressorPredictor(object):
         return clf
 
     @staticmethod
-    def __prepare_clients_dataset(clients, orders):
-        # type: (pd.DataFrame, pd.DataFrame) -> dict
+    def __prepare_clients_dataset(cnx, clients_count, from_ts, to_ts):
+        # type: (sqlite3.connect, int, long, long) -> dict
         """
-        Estrae dal dataframe degli ordini proposizionalizzato e dal dataset dei clienti le matrici da utilizzare
-        per addestrare i regressori dei clienti.
-        :param clients: dataframe con i clienti
-        :param orders: dafatrame con gli ordini proposizionalizzati
-        :return: dizionario di dataframe indicizzato per l'id del cliente
+        Crea il dataset per il training dei regressori associati ai cklienti, recuperando i dati dalla
+        connessione al database e per l'intervallo di tempo specificato dai due timestamp.
+        :param cnx: connessione al database da utilizzare
+        :param clients_count: numero di clienti presenti
+        :param from_ts: timestamp relativo al giorno di partenza del dataset
+        :param to_ts: timestamp relativo all'ultimo giorno (incluso) del dataset
+        :return: {(X, y)} dizionario indicizzato per id del cliente contenente le coppie (matrice 
+         di train, valori associati) da utilizzare per effettuare il train del relativo regressore
         """
         dfs = {}
-        for index, df in orders.groupby(['client_id']):
-            # print index, df.head()
-            sums = df.groupby('datetime').sum().reset_index()
-            sums['client_id'] = index
-            sums = sums[['client_id', 'datetime', 'day_of_year', 'year', 'ordered']]
-            # print sums
 
-            train_df = sums.join(clients, on='client_id', rsuffix='_c')
-            train_df = train_df.drop(['client_id_c'], axis=1)
+        for c in range(0, clients_count):
+            # Crea il DataFrame con anche le righe per i prodotti non ordinati
+            query = "select datetime, count(*) " \
+                    "from orders " \
+                    "where datetime >= %d and datetime <= %d and client_id = %d " \
+                    "group by datetime, product_id " \
+                    "order by datetime, client_id, product_id" % (from_ts, to_ts, c)
+            Log.d(TAG, query)
+            # ^ ORDER BY è fondamentale per effettuare la creazione in modo efficiente
+            cursor = cnx.execute(query)
 
-            # print "Client train_df", train_df.columns
-            y = train_df['ordered'].as_matrix()
-            X = train_df.drop(['ordered', 'client_name'], axis=1).as_matrix()
-            dfs[index] = (X, y)
+            next_row = cursor.fetchone()
+            df_rows = []
+            for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
+                ordered = 0
+                if next_row is not None and next_row[0] == ts:
+                    ordered = next_row[1]
+                    next_row = cursor.fetchone()
+
+                order_date = datetime.fromtimestamp(ts)
+                day_of_year = order_date.timetuple().tm_yday
+                year = order_date.timetuple().tm_year
+                df_rows.append({
+                    'datetime': ts,  # timestamp della data dell'ordine
+                    'day_of_year': day_of_year,
+                    'year': year,
+                    'client_id': c,
+                    MultiRegressorPredictor.TARGET_COL: ordered
+                })
+            df = pd.DataFrame(df_rows,
+                              columns=MultiRegressorPredictor.CLIENT_TRAIN_COLS
+                                      + [MultiRegressorPredictor.TARGET_COL])
+            y = df[MultiRegressorPredictor.TARGET_COL].as_matrix()
+            X = df.drop([MultiRegressorPredictor.TARGET_COL], axis=1).as_matrix()
+            dfs[c] = (X, y)
+
         return dfs
 
     @staticmethod
-    def __prepare_products_dataset(products, orders):
-        # type: (pd.DataFrame, pd.DataFrame) -> dict
+    def __prepare_products_dataset(cnx, products_count, from_ts, to_ts):
+        # type: (sqlite3.connect, int, long, long) -> dict
         """
-        Estrae dal dataframe degli ordini proposizionalizzato e dal dataset dei prodotti le matrici da utilizzare
-        per addestrare i regressori dei prodotti.
-        :param products: dataframe con i prodotti
-        :param orders: dafatrame con gli ordini proposizionalizzati
-        :return: dizionario di dataframe indicizzato per l'id del prodotto
+        Crea il dataset per il training dei regressori associati ai prodotti, recuperando i dati dalla
+        connessione al database e per l'intervallo di tempo specificato dai due timestamp.
+        :param cnx: connessione al database da utilizzare
+        :param products_count: numero di prodotti presenti
+        :param from_ts: timestamp relativo al giorno di partenza del dataset
+        :param to_ts: timestamp relativo all'ultimo giorno (incluso) del dataset
+        :return: {(X, y)} dizionario indicizzato per id del prodotto contenente le coppie (matrice 
+         di train, valori associati) da utilizzare per effettuare il train del relativo regressore
         """
         dfs = {}
-        for index, df in orders.groupby(['product_id']):
-            sums = df.groupby('datetime').sum().reset_index()
-            sums['product_id'] = index
-            sums = sums[['product_id', 'datetime', 'day_of_year', 'year', 'ordered']]
-            # print sums
 
-            train_df = sums.join(products, on='product_id', rsuffix='_p')
-            train_df = train_df.drop(['product_id_p'], axis=1)
-            # print "Product train_df", train_df.columns
-            y = train_df['ordered'].as_matrix()
-            X = train_df.drop(['ordered', 'product_name'], axis=1).as_matrix()
-            dfs[index] = (X, y)
+        for p in range(0, products_count):
+            # Crea il DataFrame con anche le righe per i prodotti non ordinati
+            query = "select datetime, count(*) " \
+                    "from orders " \
+                    "where datetime >= %d and datetime <= %d and product_id = %d " \
+                    "group by datetime, product_id " \
+                    "order by datetime, client_id, product_id" % (from_ts, to_ts, p)
+            Log.d(TAG, query)
+            # ^ ORDER BY è fondamentale per effettuare la creazione in modo efficiente
+            cursor = cnx.execute(query)
+
+            next_row = cursor.fetchone()
+            df_rows = []
+            for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
+                ordered = 0
+                if next_row is not None and next_row[0] == ts:
+                    ordered = next_row[1]
+                    next_row = cursor.fetchone()
+
+                order_date = datetime.fromtimestamp(ts)
+                day_of_year = order_date.timetuple().tm_yday
+                year = order_date.timetuple().tm_year
+                df_rows.append({
+                    'datetime': ts,  # timestamp della data dell'ordine
+                    'day_of_year': day_of_year,
+                    'year': year,
+                    'product_id': p,
+                    MultiRegressorPredictor.TARGET_COL: ordered
+                })
+            df = pd.DataFrame(df_rows,
+                              columns=MultiRegressorPredictor.PRODUCT_TRAIN_COLS
+                                      + [MultiRegressorPredictor.TARGET_COL])
+            y = df[MultiRegressorPredictor.TARGET_COL].as_matrix()
+            X = df.drop([MultiRegressorPredictor.TARGET_COL], axis=1).as_matrix()
+            dfs[p] = (X, y)
         return dfs
 
     @staticmethod
-    def __prepare_orders_dataset(orders):
-        # type: (pd.DataFrame) -> (np.ndarray, np.ndarray)
+    def __prepare_period_dataset(cnx, from_ts, to_ts):
+        # type: (sqlite3.connect, long, long) -> (np.ndarray, np.ndarray)
         """
-        Estrae dal dataframe degli ordini proposizionalizzato le matrici da utilizzare
-        per addestrare il regressori degli ordini.
-        :param products: dataframe con i prodotti
-        :param orders: dafatrame con gli ordini proposizionalizzati
-        :return: dizionario di dataframe indicizzato per l'id del prodotto
+        Crea il dataset per il training del regressore del periodo, recuperando i dati dalla
+        connessione al database e per l'intervallo di tempo specificato dai due timestamp.
+        :param cnx: connessione al database da utilizzare
+        :param from_ts: timestamp relativo al giorno di partenza del dataset
+        :param to_ts: timestamp relativo all'ultimo giorno (incluso) del dataset
+        :return: (X, y) matrice delle istanze di train e vettore con i valori associati ad ogni istanza
         """
-        sums = orders.groupby('datetime').sum().reset_index()
-        # sums['productId'] = index
-        sums = sums[['datetime', 'ordered']]
-        # print sums
-        sums['order_date'] = sums.apply(lambda row: datetime.fromtimestamp(row['datetime']), axis=1)
-        sums['year'] = sums.apply(lambda row: row['order_date'].year, axis=1)
 
-        sums['day_of_year'] = sums.apply(lambda row: row['order_date'].toordinal()
-                                                     - date(row['order_date'].year, 1, 1).toordinal() + 1, axis=1)
-        sums = sums.drop('order_date', axis=1)
-        # print "Orders_df", sums.columns
+        # Crea il DataFrame con anche le righe per i prodotti non ordinati
+        query = "select datetime, count(*) " \
+                "from orders " \
+                "where datetime >= %d and datetime <= %d " \
+                "group by datetime " \
+                "order by datetime" % (from_ts, to_ts)
+        Log.d(TAG, query)
+        # ^ ORDER BY è fondamentale per effettuare la creazione in modo efficiente
+        cursor = cnx.execute(query)
 
-        y = sums['ordered'].as_matrix()
-        X = sums.drop(['ordered'], axis=1).as_matrix()
+        next_row = cursor.fetchone()
+        df_rows = []
+        for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
+            ordered = 0
+            if next_row is not None and next_row[0] == ts:
+                ordered = next_row[1]
+                next_row = cursor.fetchone()
+
+            order_date = datetime.fromtimestamp(ts)
+            day_of_year = order_date.timetuple().tm_yday
+            year = order_date.timetuple().tm_year
+            df_rows.append({
+                'datetime': ts,  # timestamp della data dell'ordine
+                'day_of_year': day_of_year,
+                'year': year,
+                MultiRegressorPredictor.TARGET_COL: ordered
+            })
+        df = pd.DataFrame(df_rows,
+                          columns=MultiRegressorPredictor.PERIOD_TRAIN_COLS
+                                  + [MultiRegressorPredictor.TARGET_COL])
+        y = df[MultiRegressorPredictor.TARGET_COL].as_matrix()
+        X = df.drop([MultiRegressorPredictor.TARGET_COL], axis=1).as_matrix()
+
         return X, y
 
-    def fit(self, clients, products, matricies):
-        # type: (pd.DataFrame, pd.DataFrame, dict) -> None
+    def fit(self, cnx, clients_count, products_count, from_ts, to_ts):
+        # type: (sqlite3.connect, int, int, long, long) -> None
         """
-        Inizializza il predittore
-        :param matrices: dizionario di matrici degli ordini
-        :return:
+        Inizializza il predittore recuperando i dati dalla connessione al database       
+        :param cnx: connessione al database
+        :param clients_count: numero di clienti
+        :param products_count: numero di prodotti
+        :param from_ts: timestamp del giorno d'inizio dei dati di train
+        :param to_ts: timestamp del giorno finale dei dati di train (incluso)
+        :return: -
         """
-        self.matrices = matricies
-        self.products = products
-        self.clients = clients
-
-        sample = matricies[matricies.keys()[0]]
-        self.pcp_estimation = np.zeros(shape=sample.shape)
-
-        clients_count = sample.shape[0]
-        products_count = sample.shape[1]
-
+        matrix_shape = (clients_count, products_count)
+        self.pcp_estimation = np.zeros(shape=matrix_shape)
         self.product_regressors = np.ndarray(shape=(products_count,), dtype=object)
         self.client_regressors = np.ndarray(shape=(clients_count,), dtype=object)
 
-        days_count = len(matricies.keys())
+        days_count = (to_ts - from_ts + SECS_IN_DAY) / SECS_IN_DAY
 
-        # Calcola il numero giornaliero di ordini medio
-        ones_cnt = 0
-        for day in matricies.keys():
-            matrix = matricies[day]
-            ones_cnt += matrix.sum()
-            for c in range(0, clients_count):
-                for p in range(0, products_count):
-                    self.pcp_estimation[c, p] += matrix[c, p] / days_count
-        avg = float(ones_cnt) / float(days_count)
+        # Calcola il numero medio di 1 per ogni cella della matrice
+        total_cnt = 0
+        query = "select client_id, product_id, count(*) " \
+                "from orders " \
+                "where datetime >= %d and datetime <= %d " \
+                "group by client_id, product_id" % (from_ts, to_ts)
+        Log.d(TAG, query)
+        for c, p, cnt in cnx.execute(query):
+            total_cnt += cnt
+            self.pcp_estimation[c, p] = float(cnt) / float(days_count)
+
+        avg = float(total_cnt) / float(days_count)
         avg = int(math.ceil(avg))
         self.avg_ones = 1 if avg == 0 else avg
 
-        # Proposizionalizzo i dati
-        orders = proposizionalize(matricies, clients, products)
-
-        # print "Orders dataframe:", orders.columns
-
-        # Dati dati proposizionalizzati estraggo quelli relativi ai singoli clienti
-        clients_train_data = self.__prepare_clients_dataset(clients, orders)
+        # Dati di train per i regressori dei clienti
+        Log.d(TAG, "Fit dei regressori per i clienti...")
+        clients_train_data = self.__prepare_clients_dataset(cnx,
+                                                            clients_count=clients_count,
+                                                            from_ts=from_ts,
+                                                            to_ts=to_ts)
         for client_id in clients_train_data.keys():
             # NOTA: l'id del cliente deve corrispondere con la posizione della matrice
             X, y = clients_train_data[client_id]
             self.client_regressors[client_id] = self.__build_clf()
             self.client_regressors[client_id].fit(X, y)
 
-        # Dati dati proposizionalizzati estraggo quelli relativi ai singoli prodotti
-        products_train_data = self.__prepare_products_dataset(products, orders)
+        # Dati di train per i regressori dei prodotti
+        Log.d(TAG, "Fit dei regressori per i prodotti...")
+        products_train_data = self.__prepare_products_dataset(cnx,
+                                                              products_count=products_count,
+                                                              from_ts=from_ts,
+                                                              to_ts=to_ts)
         for product_id in products_train_data.keys():
             # NOTA: l'id del prodotto deve corrispondere con la posizione della matrice
             X, y = products_train_data[product_id]
             self.product_regressors[product_id] = self.__build_clf()
             self.product_regressors[product_id].fit(X, y)
 
-        # Dati dati proposizionalizzati estraggo quelli relativi solamente agli ordini
-        X_period, y_period = self.__prepare_orders_dataset(orders)
+        # Dati di train per il regressore del periodo
+        Log.d(TAG, "Fit del regressore del periodo...")
+        X_period, y_period = self.__prepare_period_dataset(cnx, from_ts=from_ts, to_ts=to_ts)
         self.period_regressor = self.__build_clf()
         self.period_regressor.fit(X_period, y_period)
         return
@@ -200,30 +279,32 @@ class MultiRegressorPredictor(object):
         :param c: (int) posizione del cliente nella matrice (coincide con l'id)
         :param p: (int) posizione del prodotto nella matrice (coincide con l'id) 
         :param t: (long) timestamp dell'ordine
-        :return: probabilità che venga effettuato l'ordine
+        :return: peso della cella
         """
-        client_data = pd.DataFrame([self.clients.iloc[c]])
-        product_data = pd.DataFrame([self.products.iloc[p]])
 
-        #print "client_data id", client_data['client_id'].iloc[0]
-        #print "product_data id", product_data['product_id'].iloc[0]
+        order_date = datetime.fromtimestamp(timestamp)
+        day_of_year = order_date.timetuple().tm_yday
+        year = order_date.timetuple().tm_year
 
-        fake_orders = {
-            timestamp: np.zeros(shape=(1, 1))
-        }
-        query = proposizionalize(fake_orders, client_data, product_data)
+        X_client = pd.DataFrame([{
+            'datetime': timestamp,  # timestamp della data dell'ordine
+            'day_of_year': day_of_year,
+            'year': year,
+            'client_id': c
+        }], columns=MultiRegressorPredictor.CLIENT_TRAIN_COLS).as_matrix()
 
-        #print "Query_df", query.head(1)
+        X_product = pd.DataFrame([{
+            'datetime': timestamp,  # timestamp della data dell'ordine
+            'day_of_year': day_of_year,
+            'year': year,
+            'product_id': p
+        }], columns=MultiRegressorPredictor.PRODUCT_TRAIN_COLS).as_matrix()
 
-        client_dict = MultiRegressorPredictor.__prepare_clients_dataset(client_data, query)
-        product_dict = MultiRegressorPredictor.__prepare_products_dataset(product_data, query)
-        X_period, _ = MultiRegressorPredictor.__prepare_orders_dataset(query)
-
-        X_client, _ = client_dict[client_dict.keys()[0]]
-        X_product, _ = product_dict[product_dict.keys()[0]]
-
-        #print "Client", X_client
-        #print "Product", X_product
+        X_period = pd.DataFrame([{
+            'datetime': timestamp,  # timestamp della data dell'ordine
+            'day_of_year': day_of_year,
+            'year': year,
+        }], columns=MultiRegressorPredictor.PERIOD_TRAIN_COLS).as_matrix()
 
         weight = 1
         w_c = self.client_regressors[c].predict(X_client)[0]
@@ -240,7 +321,7 @@ class MultiRegressorPredictor(object):
             weight *= w_t
         if 'w_cp' in self.components:
             weight *= p_cp
-        #print c, p, w_c, w_p, w_t, prob
+        # print c, p, w_c, w_p, w_t, prob
         return weight
 
     def predict_with_threshold(self, order_timestamp, threshold):
@@ -281,17 +362,22 @@ class MultiRegressorPredictor(object):
         clients_count = predictions.shape[0]
         products_count = predictions.shape[1]
 
-        probs = np.zeros(shape=(clients_count, products_count))
+        weights = np.zeros(shape=(clients_count, products_count))
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                probs[c, p] = self.__calculate_weight(c, p, order_timestamp)
+                weights[c, p] = self.__calculate_weight(c, p, order_timestamp)
 
         # copy is needed because reasons... (reshape + sort)
-        probs_vec = np.reshape(probs.copy(), probs.size)
-        probs_vec[::-1].sort()  # in place revese sort
+        weights_vec = np.reshape(weights.copy(), weights.size)
+        weights_vec[::-1].sort()  # in place revese sort
 
-        threshold = probs_vec[self.avg_ones - 1]
-        return self.predict_with_threshold(order_timestamp, threshold)
+        threshold = weights_vec[self.avg_ones - 1]
+        # check threshold
+        for c in range(0, clients_count):
+            for p in range(0, products_count):
+                predictions[c, p] = 1 if weights[c, p] >= threshold else 0
+
+        return predictions
 
     def predict_proba(self, order_timestamp):
         # type: (long) -> np.ndarray or None

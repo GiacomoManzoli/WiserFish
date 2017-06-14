@@ -5,6 +5,7 @@ from shutil import copyfile
 
 import pandas as pd
 import numpy as np
+import sqlite3
 
 from dataset.generator.client import Client
 from dataset.generator.order import Order
@@ -135,46 +136,19 @@ def load_generators(dataset_name='sample'):
 
     return clients, products, global_trend
 
+def load_orders_dataframe(cnx, from_ts=None, to_ts=None):
+    # type: (sqlite3.connect, long, long) -> pd.DataFrame
 
-def load_dataset(dataset_name='sample'):
-    # type: (str) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame)
-    """
-    Carica i DataFrame relativi al dataset passato per parametro
-    :param dataset_name: nome del dataset
-    :return: DataFrame dei clienti, prodotti e ordini
-    """
-    _, _, data_path = __output_dirs(dataset_name, make_dirs=False)
+    # 1. Carica dal database il DataFrame con gli ordini presenti
 
-    client_df = pd.read_csv(data_path + 'clients.csv')
-    product_df = pd.read_csv(data_path + 'products.csv')
-    order_df = pd.read_csv(data_path + 'orders.csv')
+    query = "select o.datetime, o.client_id, o.product_id from orders o"
+    if from_ts is not None and to_ts is not None:
+        query += " where o.datetime >= %d and o.datetime <= %d" % (from_ts, to_ts)
+    query += " order by o.datetime;"
 
-    return client_df, product_df, order_df
+    df = pd.read_sql_query(query, con=cnx)
+    return df
 
-
-def make_order_matrices(client_count, product_count, order_df, from_ts, to_ts):
-    # type: (int, int, pd.DataFrame) -> dict
-    """
-    Crea il dizionario di matrici degli ordini a partire da un dataframe degli ordini
-    :param client_count: numero di clienti presenti nel dataset
-    :param product_count: numero di prodotti presenti nel dataset
-    :param order_df: dataframe con gli ordini
-    :return: dizionario indicizzato per timestamp contenente le varie matrici
-    """
-    order_dict = {}
-    matrix_shape = (client_count, product_count)
-
-    for ts in range(from_ts, to_ts+SECS_IN_DAY, SECS_IN_DAY):
-        order_dict[ts] = np.zeros(shape=matrix_shape)
-
-    for idx, row in order_df.iterrows():
-        key = int(row['datetime'])  # timestamp dell'ordine
-        assert key in order_dict.keys()
-        #if key not in order_dict.keys():
-        #    order_dict[key] = np.zeros(shape=matrix_shape)
-        order_dict[key][int(row['client_id']), int(row['product_id'])] = 1
-
-    return order_dict
 
 
 # Metodi ausiliari

@@ -3,98 +3,115 @@ import math
 
 import numpy as np
 import pandas as pd
+from datetime import datetime
+
+import sqlite3
 from sklearn import linear_model
 from sklearn.linear_model import PassiveAggressiveRegressor
 from sklearn.svm import SVR
 
 from dataset.generator.values import SECS_IN_DAY
-from dataset.proposizionalizer import proposizionalize
 
-# TODO SISTEMARE QUESTO SCHIFO DI CODICE
+from util import Log
+
+TAG = "SingleRegressorPredictor"
+
 
 class SingleRegressorPredictor(object):
     """
     Predittore che usa un regressore per ogni cella della matrice clienti-prodotti per approssimare
-    la probabilità di una vendita al variare del periodo.
+    la probabilità di una vendita al variare del periodo.    
     I regressori possono essere addestrati sui dati giornalieri oppure aggregando i giorni.
     """
 
-    def __init__(self, group_size=5, regressor_name='SVR'):
-        # type: (int, str) -> None
+    TRAIN_COLS = ['datetime', 'day_of_year', 'year']
+    TARGET_COL = 'ordered'
+
+    def __init__(self, regressor_name='SVR'):
+        # type: (str) -> None
         self.regressor_name = regressor_name
         self.avg_ones = None
-        self.group_size = group_size
         self.regressor_matrix = None
-        self.clients = None
-        self.products = None
 
-    def __extract_day_group(self, dataset):
-        # type: (pd.DataFrame) -> pd.DataFrame
+    def fit(self, cnx, clients_count, products_count, from_ts, to_ts):
+        # type: (sqlite3.connect, int, int, long, long) -> None
         """
-        Aggiunge la colonna `day_group` al dataset.
-        Vengono rimossse le colonne: `datetime`, `year` e `day_of_year`.
-        :param dataset: dataset al quale aggiungere la colonna `day_group`
+        Inizializza il predittore recuperando i dati dal database, considerando solamente i dati nell'intervallo
+        temporale specificato (estremi inclusi).
+        :param cnx: connessione al database
+        :param clients_count: numero di clienti
+        :param products_count: numero di prodotti
+        :param from_ts: timestamp del giorno d'inizio dei dati di train
+        :param to_ts: timestamp del giorno finale dei dati di train (incluso)
         :return: 
         """
-        df = dataset
-        df['day_group'] = df['datetime'] / (SECS_IN_DAY * self.group_size)
-        df['day_group'] = df['day_group'].astype(int)
-        df = df.drop(['datetime', 'year', 'day_of_year'], axis=1)
-        return df
+        self.regressor_matrix = np.ndarray(shape=(clients_count, products_count), dtype=object)
 
-    def fit(self, clients, products, matrices):
-        # type: (pd.DataFrame, pd.DataFrame, dict) -> None
-        """
-        Inizializza il predittore
-        :param clients: dataframe con i dati dei clienti
-        :param products: dataframe con i dati dei prodotti
-        :param matrices: dizionario con le matrici degli ordini
-        :return: 
-        """
-        self.clients = clients
-        self.products = products
-        dataset = proposizionalize(matrices, clients, products)
-
-        client_cnt = dataset['client_id'].nunique()
-        product_cnt = dataset['product_id'].nunique()
-
-        self.regressor_matrix = np.ndarray(shape=(client_cnt, product_cnt), dtype=object)
-        df = self.__extract_day_group(dataset)
-
-        for index, group in df.groupby(['client_id', 'product_id']):
-            c, p = index
-            # print "Fitting the Regressor for client", c, "product", p
-            group = group.groupby('day_group').mean()  #
-            # df['ordered'] è nel range [0,1] ed è la probabilità stimata che ci sia almeno
-            # un ordine nel day_group
-            # Fissato un day_group tutti i valori del dataframe, eccetto la colonna `ordered` sono
-            # costanti, quindi farne la media non altera il valore.
-            group = group.reset_index()
-
-            X = group.drop(['ordered'], axis=1).as_matrix()
-            y = group['ordered'].as_matrix()
-
-            clf = None
-            if self.regressor_name == 'SGD':
-                clf = linear_model.SGDRegressor()
-            elif self.regressor_name == 'SVR':
-                clf = SVR()
-            elif self.regressor_name == 'PAR':
-                clf = PassiveAggressiveRegressor()
-
-            self.regressor_matrix[c, p] = clf
-            self.regressor_matrix[c, p].fit(X, y)
-
-        ones_cnt = 0  # counts the total number of orders
-        for day in matrices.keys():
-            ones_cnt += matrices[day].sum()
-
-        avg = float(ones_cnt) / float(len(matrices.keys()))
+        days_count = (to_ts - from_ts + SECS_IN_DAY) / SECS_IN_DAY
+        # Calcola il numero medio di 1 per ogni cella della matrice
+        query = "SELECT count(*) " \
+                "FROM orders " \
+                "WHERE datetime >= %d AND datetime <= %d " % (from_ts, to_ts)
+        Log.d(TAG, query)
+        row = cnx.execute(query).fetchone()
+        total_cnt = row[0]
+        avg = float(total_cnt) / float(days_count)
         avg = int(math.ceil(avg))
         self.avg_ones = 1 if avg == 0 else avg
+
+        # df = self.__extract_day_group(dataset)
+        Log.d(TAG, "Fit dei regressori...")
+        for c in range(0, clients_count):
+            for p in range(0, products_count):
+                # Crea il DataFrame con anche le righe per i prodotti non ordinati
+                query = "SELECT datetime " \
+                        "FROM orders " \
+                        "WHERE datetime >= %d " \
+                        "AND datetime <= %d " \
+                        "AND client_id = %d " \
+                        "AND product_id = %d " \
+                        "ORDER BY datetime" % (from_ts, to_ts, c, p)
+                # ^ ORDER BY è fondamentale per effettuare la creazione in modo efficiente
+                Log.d(TAG, query)
+                cursor = cnx.execute(query)
+
+                next_row = cursor.fetchone()
+                df_rows = []
+                for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
+                    ordered = 0
+                    if next_row is not None and next_row[0] == ts:
+                        ordered = 1
+                        next_row = cursor.fetchone()
+
+                    order_date = datetime.fromtimestamp(ts)
+                    day_of_year = order_date.timetuple().tm_yday
+                    year = order_date.timetuple().tm_year
+                    df_rows.append({
+                        'datetime': ts,  # timestamp della data dell'ordine
+                        'day_of_year': day_of_year,
+                        'year': year,
+                        SingleRegressorPredictor.TARGET_COL: ordered
+                    })
+                df = pd.DataFrame(df_rows,
+                                  columns=SingleRegressorPredictor.TRAIN_COLS
+                                          + [SingleRegressorPredictor.TARGET_COL])
+                y = df[SingleRegressorPredictor.TARGET_COL].as_matrix()
+                X = df.drop([SingleRegressorPredictor.TARGET_COL], axis=1).as_matrix()
+
+                clf = None
+                if self.regressor_name == 'SGD':
+                    clf = linear_model.SGDRegressor()
+                elif self.regressor_name == 'SVR':
+                    clf = SVR()
+                elif self.regressor_name == 'PAR':
+                    clf = PassiveAggressiveRegressor()
+
+                self.regressor_matrix[c, p] = clf
+                self.regressor_matrix[c, p].fit(X, y)
+
         return
 
-    def __calculate_order_probability(self, c, p, timestamp):
+    def __calculate_weights(self, c, p, timestamp):
         # type: (int, int, long) -> float
         """
         Calcola la probabilità che il cliente c ordini il prodotto p nel periodo t
@@ -103,17 +120,17 @@ class SingleRegressorPredictor(object):
         :param t: (long) timestamp dell'ordine
         :return: probabilità che venga effettuato l'ordine
         """
-        client_data = pd.DataFrame([self.clients.iloc[c]])
-        product_data = pd.DataFrame([self.products.iloc[p]])
+        order_date = datetime.fromtimestamp(timestamp)
+        day_of_year = order_date.timetuple().tm_yday
+        year = order_date.timetuple().tm_year
 
-        fake_orders = {
-            timestamp: np.zeros(shape=(1, 1))
-        }
-        query = proposizionalize(fake_orders, client_data, product_data)
-        query = query.drop('ordered', axis=1)
-        query = self.__extract_day_group(query)
-        # print query
-        return self.regressor_matrix[c, p].predict(query.as_matrix())[0]
+        X = pd.DataFrame([{
+            'datetime': timestamp,  # timestamp della data dell'ordine
+            'day_of_year': day_of_year,
+            'year': year,
+        }], columns=SingleRegressorPredictor.TRAIN_COLS).as_matrix()
+
+        return self.regressor_matrix[c, p].predict(X)[0]
 
     def predict_with_threshold(self, order_timestamp, threshold):
         # type: (long, float) -> np.ndarray or None
@@ -134,7 +151,7 @@ class SingleRegressorPredictor(object):
         # check threshold
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                order_probability = self.__calculate_order_probability(c, p, order_timestamp)
+                order_probability = self.__calculate_weights(c, p, order_timestamp)
                 predictions[c, p] = 1 if order_probability >= threshold else 0
         return predictions
 
@@ -154,14 +171,20 @@ class SingleRegressorPredictor(object):
         probs = np.zeros(shape=(clients_count, products_count))
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                probs[c, p] = self.__calculate_order_probability(c, p, order_timestamp)
+                probs[c, p] = self.__calculate_weights(c, p, order_timestamp)
 
         # copy is needed because reasons... (reshape + sort)
         probs_vec = np.reshape(probs.copy(), probs.size)
         probs_vec[::-1].sort()  # in place revese sort
 
         threshold = probs_vec[self.avg_ones - 1]
-        return self.predict_with_threshold(order_timestamp, threshold)
+        predictions = np.zeros(shape=(clients_count, products_count))
+        # check threshold
+        for c in range(0, clients_count):
+            for p in range(0, products_count):
+                order_probability = self.__calculate_weights(c, p, order_timestamp)
+                predictions[c, p] = 1 if order_probability >= threshold else 0
+        return predictions
 
     def predict_proba(self, order_timestamp):
         # type: (long) -> np.ndarray or None
@@ -182,7 +205,7 @@ class SingleRegressorPredictor(object):
         probs = np.zeros(shape=(clients_count, products_count))
         for c in range(0, clients_count):
             for p in range(0, products_count):
-                probs[c, p] = self.__calculate_order_probability(c, p, order_timestamp)
+                probs[c, p] = self.__calculate_weights(c, p, order_timestamp)
 
         vectorized_weights = np.reshape(probs, (1, probs.size))  # (1x Nweights)
         result = np.ones(shape=(probs.size, 2))

@@ -3,8 +3,13 @@ import datetime
 import numpy as np
 import math
 
-from dataset.generator.probability_models import ProbabilityModel
+import sqlite3
 
+from dataset.generator.probability_models import ProbabilityModel
+from dataset.generator.values import SECS_IN_DAY
+from util import Log
+
+TAG = "LessSinfulBaselinePredictor"
 
 class LessSinfulBaselinePredictor(object):
     """
@@ -19,24 +24,31 @@ class LessSinfulBaselinePredictor(object):
         self.pc_estimation = None  # Stima di P(c)
         self.pcp_estimation = None  # Stima di P(cp)
 
-    def fit(self, matrices):
-        # type: (dict) -> None
-        """
-        Inizializza la classe
-        :param matrices: dizionario di matrici degli ordini
-        :return:
-        """
-        sample = matrices[matrices.keys()[0]]
-        self.pcp_estimation = np.zeros(shape=sample.shape)
+    def fit(self, cnx, clients_count, products_count, from_ts, to_ts):
+        # type: (sqlite3.connect, int, int, long, long) -> None
 
-        clients_count = sample.shape[0]
-        products_count = sample.shape[1]
+        # Costruisce le matrici degli ordini
+        matrices = {}
+        matrix_shape = (clients_count, products_count)
+        for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
+            matrices[ts] = np.zeros(shape=matrix_shape)
 
+        query = "SELECT datetime, client_id, product_id " \
+                "FROM orders " \
+                "WHERE datetime >= %d AND datetime <= %d" % (from_ts, to_ts)
+        cursor = cnx.execute(query)
+        Log.d(TAG, query)
+        for ts, c, p in cursor:
+            key = int(ts)  # timestamp dell'ordine
+            assert key in matrices.keys()
+            matrices[key][int(c), int(p)] = 1
+
+        self.pcp_estimation = np.zeros(shape=matrix_shape)
         self.pp_estimation = np.zeros(shape=(products_count,))
         self.pc_estimation = np.zeros(shape=(clients_count,))
 
         ones_cnt = 0
-        days_count = len(matrices.keys())
+        days_count = (to_ts - from_ts + SECS_IN_DAY) / SECS_IN_DAY
         for day in matrices.keys():
             matrix = matrices[day]
             ones_cnt += matrix.sum()
@@ -131,7 +143,14 @@ class LessSinfulBaselinePredictor(object):
         probs_vec[::-1].sort()  # Magicamente fa l'inplace reverse-sort
 
         threshold = probs_vec[self.avg_ones - 1]
-        return self.predict_with_threshold(order_timestamp, threshold)
+        predictions = np.zeros(shape=self.pcp_estimation.shape, dtype=int)
+        # check threshold
+        for c in range(0, clients_count):
+            for p in range(0, products_count):
+                order_probability = self.__calculate_order_probability(c, p, t)
+                predictions[c, p] = 1 if order_probability >= threshold else 0
+        return predictions
+
 
     def predict_proba(self, order_timestamp):
         # type: (long) -> np.ndarray or None

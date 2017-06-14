@@ -10,25 +10,22 @@ import time
 import math
 import numpy as np
 import pandas as pd
+import sqlite3
 from sklearn import tree, ensemble
 from sklearn.linear_model import PassiveAggressiveRegressor
 from sklearn.metrics import roc_auc_score
-from sklearn.naive_bayes import BernoulliNB
 
-from dataset.generator.generator_v2 import generate_dataset
 from dataset.generator.values import SECS_IN_DAY
-from dataset.manager import load_dataset, make_order_matrices
-from dataset.proposizionalizer import proposizionalize
-from dataset.set_maker import make_train_set, make_test_set
+from dataset.manager import load_orders_dataframe
 from predictor.baseline import BaselinePredictor
 from predictor.less_sinful_baseline import LessSinfulBaselinePredictor
 from predictor.metrics import calculate_metrics
 from predictor.multi_regressor_predictor import MultiRegressorPredictor
-from predictor.sinful_baseline import SinfulBaselinePredictor
 from predictor.single_regressor_predictor import SingleRegressorPredictor
-from util import ConfigurationFile
+from util import ConfigurationFile, Log
 
 OUT_DIR_NAME = "outputs"
+TAG = "dataset_predictor"
 
 
 def main(argv):
@@ -60,42 +57,25 @@ def main(argv):
     if not os.path.exists(OUT_DIR_NAME + "/" + config.base_prefix):
         os.makedirs(OUT_DIR_NAME + "/" + config.base_prefix)
 
+
     load_start_time = time.time()
 
     # Dataframe contenti i clienti, prodotti e ordini
-    clients_df, products_df, orders_df = load_dataset(config.base_prefix)
 
-    print "Dataset loaded!"
-    print "Total duration: ", time.time() - load_start_time, "seconds"
+    cnx = sqlite3.connect('./datasets/%s/data/%s.db' % (config.base_prefix, config.base_prefix))
 
     dataset_star_ts = config.starting_day
     dataset_end_ts = long(dataset_star_ts + (config.days_count - 1) * SECS_IN_DAY)
-
-    print orders_df.head(5)
-
-    ############################
-    # Train set generation
-    ############################
-
     train_set_start_ts = long(dataset_star_ts)
-    # train_set_end_ts = long(train_set_start_ts + (int(math.floor(config.days_count / 2)-1) * SECS_IN_DAY ))
     train_set_end_ts = long(dataset_end_ts - 7 * SECS_IN_DAY)
-    # ^ il -1 serve perché gli estremi dell'intervallo sono entrambi compresi e quindi senza il -1 si avrebbe un
-    # train set con days_count+1 giorni
-    X_train_dict, X_train, y_train = make_train_set(clients_df=clients_df,
-                                                    products_df=products_df,
-                                                    orders_df=orders_df,
-                                                    from_ts=train_set_start_ts,
-                                                    to_ts=train_set_end_ts)
 
-    if len(X_train_dict.keys()) == 0:
-        print "ERROR: EMPTY TRAIN SET"
-        return
+    Log.d(TAG, "Dataset loaded!")
+    Log.d(TAG, "Total duration: " + str(time.time() - load_start_time) + " seconds")
 
     ############################
     # Test set generation
     ############################
-    print "Query generation..."
+    Log.d(TAG, "Genero le query...")
 
     query_ts = [
         train_set_end_ts + SECS_IN_DAY,  # Giorno immediatamente successivo alla fine del TS
@@ -105,15 +85,31 @@ def main(argv):
 
     queries = []
     for ts in query_ts:
-        X_test_dict, X_test, y_test = make_test_set(clients_df=clients_df,
-                                                    products_df=products_df,
-                                                    orders_df=orders_df,
-                                                    query_ts=ts)
+        query = "select client_id, product_id " \
+                "from orders " \
+                "where datetime == %d " \
+                "order by client_id, product_id" % ts
+        # ^ ORDER BY è fondamentale per effettuare la creazione in modo efficiente
+        cursor = cnx.execute(query)
+
+        next_row = cursor.fetchone()
+        df_rows = []
+        for c in range(0, config.clients_count):
+            for p in range(0, config.products_count):
+                ordered = 0
+                if next_row is not None and next_row == (c, p):
+                    ordered = 1
+                    next_row = cursor.fetchone()
+
+                df_rows.append({
+                    'ordered': ordered
+                })
+        y_test = pd.DataFrame(df_rows,
+                              columns=['ordered'])['ordered'].as_matrix()
 
         queries.append(
             (datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d'),
-             X_test_dict,
-             X_test,
+             ts,
              y_test)
         )
 
@@ -130,32 +126,13 @@ def main(argv):
         # ("sinful", SinfulBaselinePredictor()), Non può più essere utilizzato, perché usa p_c e p_p
         ("less", LessSinfulBaselinePredictor()),
         # ("tree_5", tree.DecisionTreeClassifier(max_depth=5)),
-        ("tree_10", tree.DecisionTreeClassifier(max_depth=10)),
+        # ("tree_10", tree.DecisionTreeClassifier(max_depth=10)),
         # ("tree_N", tree.DecisionTreeClassifier()),
         # ("bern", BernoulliNB()),
         # ("forest", ensemble.RandomForestClassifier()),
-        ("svr_multi_pc_pp", MultiRegressorPredictor(components=['w_c', 'w_p'],
-                                                    regressor_name='SVR')),
-        ("svr_multi_pc_pp_pt", MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t'],
-                                                       regressor_name='SVR')),
         ("svr_multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t', 'w_cp'],
                                                             regressor_name='SVR')),
-        ("svr_multi_pt_p_cp", MultiRegressorPredictor(components=['w_t', 'w_cp'],
-                                                      regressor_name='SVR')),
-        ('svr_single_1', SingleRegressorPredictor(group_size=1,
-                                                  regressor_name='SVR')),
-        # ('single_3', SingleRegressorPredictor(regressor_name='SVR', group_size=3)),
-        # ('single_5', SingleRegressorPredictor(regressor_name='SVR', group_size=5)),
-        ("sgd_multi_pc_pp", MultiRegressorPredictor(components=['w_c', 'w_p'],
-                                                    regressor_name='SGD')),
-        ("sgd_multi_pc_pp_pt", MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t'],
-                                                       regressor_name='SGD')),
-        ("sgd_multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t', 'w_cp'],
-                                                            regressor_name='SGD')),
-        ("sgd_multi_pt_p_cp", MultiRegressorPredictor(components=['w_t', 'w_cp'],
-                                                      regressor_name='SGD')),
-        ('sgd_single_1', SingleRegressorPredictor(group_size=1,
-                                                  regressor_name='SGD')),
+        ("svr_single", SingleRegressorPredictor(regressor_name='SVR')),
 
         ("par_multi_pc_pp", MultiRegressorPredictor(components=['w_c', 'w_p'],
                                                     regressor_name='PAR')),
@@ -163,10 +140,7 @@ def main(argv):
                                                        regressor_name='PAR')),
         ("par_multi_pc_pp_pt_p_cp", MultiRegressorPredictor(components=['w_c', 'w_p', 'w_t', 'w_cp'],
                                                             regressor_name='PAR')),
-        ("par_multi_pt_p_cp", MultiRegressorPredictor(components=['w_t', 'w_cp'],
-                                                      regressor_name='PAR')),
-        ('par_single_1', SingleRegressorPredictor(group_size=1,
-                                                  regressor_name='PAR'))
+        ("par_single", SingleRegressorPredictor(regressor_name='PAR'))
     ]
 
     with open("%s/%s/%s.csv" % (OUT_DIR_NAME, config.base_prefix, run_name), 'wb') as output:
@@ -181,42 +155,37 @@ def main(argv):
             print "--- Classifier:", name, "---"
 
             print "Fitting..."
-            if name == "base" or name == "less":
-                clf.fit(X_train_dict)
-            elif "multi" in name or "single" in name:
-                clf.fit(clients_df, products_df, X_train_dict)
+            if "multi" in name or "single" in name or name == "base" or name == "less":
+                clf.fit(cnx=cnx,
+                        from_ts=train_set_start_ts,
+                        to_ts=train_set_end_ts,
+                        clients_count=config.clients_count,
+                        products_count=config.products_count)
             else:
-                clf.fit(X_train, y_train)
+                #clf.fit(X_train, y_train)
+                Log.d(TAG, "Non ancora implementato")
 
             for query in queries:
-                query_name, X_test_dict, X_test, y_test = query
+                query_name, ts, y_test = query
 
-                # X_test_dict: dati per il test in formato dizionario di matrice
-                # X_test: dati per il test sotto forma di ndarray
-                # y_test: label per i dati di test sotto forma di ndarray (vettore singolo)
-
-                print "Query:", query_name
+                Log.d(TAG, "Query: %s" % query_name)
 
                 y_test_matrix = y_test.reshape((config.clients_count, config.products_count))
-                print "Expected:"
+                Log.d(TAG,"Expected:")
                 print y_test_matrix
 
                 predictions = None
                 predictions_probabilities = None
 
-                t = time.mktime(datetime.datetime.strptime(query_name, "%Y-%m-%d").timetuple())
-
-                if len(X_test_dict.keys()) > 0:
-                    if name == "base" or name == "less":
-                        predictions = clf.predict_with_topn(t)  # returns a NClients x NProducts matrix
-                        predictions_probabilities = clf.predict_proba(t)  # returns a matrix like a SKLearn classifier
-                    elif "multi" in name or "single" in name:
-                        predictions = clf.predict_with_topn(t)  # reshape as a NClients x NProducts matrix
-                        predictions_probabilities = clf.predict_proba(t)
-                    else:
-                        predictions = clf.predict(X_test)
-                        predictions = predictions.reshape(y_test_matrix.shape)  # reshape as a NClients x NProducts matrix
-                        predictions_probabilities = clf.predict_proba(X_test)
+                if "multi" in name or "single" in name or name == "base" or name == "less":
+                    predictions = clf.predict_with_topn(ts)  # reshape as a NClients x NProducts matrix
+                    predictions_probabilities = clf.predict_proba(ts)
+                else:
+                    # predictions = clf.predict(X_test)
+                    # predictions = predictions.reshape(
+                    #     y_test_matrix.shape)  # reshape as a NClients x NProducts matrix
+                    # predictions_probabilities = clf.predict_proba(X_test)
+                    Log.d(TAG, "Non ancora implementato")
 
                 if predictions is not None:
                     print predictions
@@ -231,6 +200,7 @@ def main(argv):
                     print name, acc, prec, rec, roc_auc
                     writer.writerow([query_name, name, str(acc), str(prec), str(rec), str(roc_auc)])
 
+            del clf
 
 
 if __name__ == '__main__':

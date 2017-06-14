@@ -2,7 +2,12 @@
 import numpy as np
 import math
 
-SECS_IN_DAY = 60 * 60 * 24
+import sqlite3
+
+from dataset.generator.values import SECS_IN_DAY
+from util import Log
+
+TAG = "BaselinePredictor"
 
 
 def scale_fn(t):
@@ -11,6 +16,7 @@ def scale_fn(t):
         return 1.0 / t
     else:
         return 1.0
+
 
 class BaselinePredictor(object):
     """
@@ -23,6 +29,7 @@ class BaselinePredictor(object):
         self.scale_function = scale_function
         self.matrices = {}  # type: dict - dizionario contenente le matrici degli ordini
         self.avg_ones = None  # type: float
+        self.cnx = None
 
     def __calculate_weights(self, timestamp):
         # type: (long) -> np.ndarray
@@ -50,20 +57,34 @@ class BaselinePredictor(object):
                 weights[c, p] /= norm_factor
         return weights
 
-    def fit(self, matrices):
-        # type: (dict) -> None
-        """
-        Inizializza il predittore
-        :param matrices: dizionario di matrici degli ordini
-        :return:
-        """
-        self.matrices = matrices
-        # Calcola il numero giornaliero di ordini medio
-        ones_cnt = 0
-        for day in matrices.keys():
-            matrix = matrices[day]
-            ones_cnt += matrix.sum()
-        avg = float(ones_cnt) / float(len(matrices.keys()))
+    def fit(self, cnx, clients_count, products_count, from_ts, to_ts):
+        # type: (sqlite3.connect, int, int, long, long) -> None
+
+        # Costruisce le matrici degli ordini
+        self.matrices = {}
+        matrix_shape = (clients_count, products_count)
+        for ts in range(from_ts, to_ts + SECS_IN_DAY, SECS_IN_DAY):
+            self.matrices[ts] = np.zeros(shape=matrix_shape)
+
+        query = "SELECT datetime, client_id, product_id " \
+                "FROM orders " \
+                "WHERE datetime >= %d AND datetime <= %d" % (from_ts, to_ts)
+        cursor = cnx.execute(query)
+        Log.d(TAG, query)
+        for ts, c, p in cursor:
+            key = int(ts)  # timestamp dell'ordine
+            assert key in self.matrices.keys()
+            self.matrices[key][int(c), int(p)] = 1
+
+        days_count = (to_ts - from_ts + SECS_IN_DAY) / SECS_IN_DAY
+        # Calcola il numero medio di 1 per ogni cella della matrice
+        query = "SELECT count(*) " \
+                "FROM orders " \
+                "WHERE datetime >= %d AND datetime <= %d " % (from_ts, to_ts)
+        Log.d(TAG, query)
+        row = cnx.execute(query).fetchone()
+        total_cnt = row[0]
+        avg = float(total_cnt) / float(days_count)
         avg = int(math.ceil(avg))
         self.avg_ones = 1 if avg == 0 else avg
         return
@@ -79,11 +100,12 @@ class BaselinePredictor(object):
         """
         if len(self.matrices.keys()) <= 0:
             return None
-        clients_count = self.matrices[self.matrices.keys()[0]].shape[0]
-        products_count = self.matrices[self.matrices.keys()[0]].shape[1]
-        predictions = np.zeros(shape=(clients_count, products_count),dtype=int)
 
         weights = self.__calculate_weights(order_timestamp)
+
+        clients_count = self.matrices[self.matrices.keys()[0]].shape[0]
+        products_count = self.matrices[self.matrices.keys()[0]].shape[1]
+        predictions = np.zeros(shape=(clients_count, products_count), dtype=int)
 
         for c in range(0, clients_count):
             for p in range(0, products_count):
@@ -104,7 +126,6 @@ class BaselinePredictor(object):
 
         clients_count = self.matrices[self.matrices.keys()[0]].shape[0]
         products_count = self.matrices[self.matrices.keys()[0]].shape[1]
-        predictions = np.zeros(shape=(clients_count, products_count))
 
         weights = self.__calculate_weights(order_timestamp)
 
@@ -114,7 +135,13 @@ class BaselinePredictor(object):
 
         threshold = predictions_vector[self.avg_ones - 1]
 
-        return self.predict_with_threshold(order_timestamp, threshold)
+        predictions = np.zeros(shape=(clients_count, products_count), dtype=int)
+
+        for c in range(0, clients_count):
+            for p in range(0, products_count):
+                predictions[c, p] = int(1) if weights[c, p] >= threshold else int(0)
+        return predictions
+
 
     def predict_proba(self, order_timestamp):
         # type: (long) -> np.ndarray or None
