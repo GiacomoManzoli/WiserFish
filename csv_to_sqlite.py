@@ -75,7 +75,6 @@ def main(argv):
 
     orders_df.to_sql(name='orders',
                      con=cnx,
-                     chunksize=40,
                      if_exists='replace',
                      index=True,
                      index_label='order_id',
